@@ -35,7 +35,7 @@ dependencies = [
     "submitit",
     "tqdm",
     "pymunk",
-    "decord",
+    "decord; sys_platform == 'linux' and platform_machine == 'x86_64'",
     "omegaconf",
     "ruamel.yaml",
 ]

@@ -67,15 +67,14 @@ from eb_jepa.training_utils import (
     load_config,
 )
 
-# Default SLURM parameters
+# Default SLURM parameters — HTW cluster (defq, GB200 nodes, aarch64)
 SLURM_DEFAULTS = {
     "mem_per_gpu": "210G",
     "cpus_per_task": 16,
     "timeout_min": 24 * 60,
-    "partition": "learn",
+    "partition": "defq",
     "gpus_per_node": 1,
-    "qos": "lowest",
-    "account": "fair_amaia_cw_video",
+    "account": "pdl17890",
 }
 
 
@@ -121,7 +120,6 @@ def make_executor(
             "nodes": 1,
             "ntasks-per-node": 1,
             "gpus-per-node": SLURM_DEFAULTS["gpus_per_node"],
-            "qos": SLURM_DEFAULTS["qos"],
             "account": SLURM_DEFAULTS["account"],
         },
     }
