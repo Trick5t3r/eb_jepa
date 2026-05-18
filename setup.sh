@@ -14,7 +14,10 @@ echo "    venv   : $UV_PROJECT_ENVIRONMENT"
 echo "    cache  : $UV_CACHE_DIR"
 echo ""
 
-# 1. Create required directories in the work partition
+# 1. Make cluster scripts executable and ensure they're in PATH via env.sh
+chmod +x "$REPO_ROOT"/cluster/{sq,qall,log,gpus,users}
+
+# 2. Create required directories in the work partition
 mkdir -p "$UV_INSTALL_DIR" "$UV_CACHE_DIR" "$WORK/venvs" \
          "$WORK/checkpoints" "$WORK/logs"
 

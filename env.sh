@@ -8,6 +8,9 @@ WORK=${EBJEPA_WORK:-/lustre/work/pdl17890/udl806719}
 ARCH=$(uname -m)                           # x86_64 on login node, aarch64 on compute nodes
 export EBJEPA_COMPUTE_ARCH=${EBJEPA_COMPUTE_ARCH:-aarch64}  # target arch for SLURM jobs
 
+# Cluster utility scripts
+export PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/cluster:$PATH"
+
 # uv binary (arch-specific, avoids Exec format error across node types)
 export UV_INSTALL_DIR=$WORK/uv_bin/$ARCH
 export PATH="$UV_INSTALL_DIR:$HOME/.local/bin:$PATH"
