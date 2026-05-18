@@ -5,7 +5,8 @@
 
 # Work partition — override by setting EBJEPA_WORK before sourcing
 WORK=${EBJEPA_WORK:-/lustre/work/pdl17890/udl806719}
-ARCH=$(uname -m)   # x86_64 on login node, aarch64 on compute nodes
+ARCH=$(uname -m)                           # x86_64 on login node, aarch64 on compute nodes
+export EBJEPA_COMPUTE_ARCH=${EBJEPA_COMPUTE_ARCH:-aarch64}  # target arch for SLURM jobs
 
 # uv binary (arch-specific, avoids Exec format error across node types)
 export UV_INSTALL_DIR=$WORK/uv_bin/$ARCH
@@ -18,3 +19,6 @@ export UV_PROJECT_ENVIRONMENT=$WORK/venvs/eb_jepa_$ARCH
 # EB-JEPA paths
 export EBJEPA_CKPTS=${EBJEPA_CKPTS:-$WORK/checkpoints}
 # export EBJEPA_DSETS=$WORK/datasets   # uncomment once datasets are downloaded
+
+# W&B: export WANDB_DISABLED=true before sourcing to turn off logging cluster-wide
+export WANDB_DISABLED=${WANDB_DISABLED:-false}

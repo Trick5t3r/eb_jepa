@@ -33,6 +33,23 @@ echo ">>> Running uv sync (this downloads wheels — may take a few minutes)..."
 cd "$REPO_ROOT"
 uv sync --dev
 
+# 4. W&B login
+echo ""
+echo ">>> W&B setup"
+if grep -q "api.wandb.ai" "$HOME/.netrc" 2>/dev/null; then
+    echo "    W&B already configured in ~/.netrc"
+else
+    echo -n "    Enter your W&B API key (leave blank to skip): "
+    read -r WANDB_KEY
+    if [ -n "$WANDB_KEY" ]; then
+        uv run wandb login "$WANDB_KEY"
+        echo "    W&B key saved to ~/.netrc"
+    else
+        echo "    Skipped. To enable later: uv run wandb login <key>"
+        echo "    To disable cluster-wide: export WANDB_DISABLED=true before sourcing env.sh"
+    fi
+fi
+
 echo ""
 echo "=== Setup complete ==="
 echo ""
@@ -44,3 +61,6 @@ echo ""
 echo "Then run: source ~/.bashrc"
 echo ""
 echo "To verify: uv run pytest tests/ -v"
+echo ""
+echo "To disable W&B logging: export WANDB_DISABLED=true  (before sourcing env.sh)"
+echo "To re-enable:            export WANDB_DISABLED=false (before sourcing env.sh)"

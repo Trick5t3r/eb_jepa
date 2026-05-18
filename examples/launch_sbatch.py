@@ -68,8 +68,12 @@ from eb_jepa.training_utils import (
 )
 
 # Default SLURM parameters — HTW cluster (defq, GB200 nodes, aarch64)
+# Compute-node target arch — override with EBJEPA_COMPUTE_ARCH env var (e.g. x86_64 on other clusters)
+_WORK = os.environ.get("EBJEPA_WORK", "/lustre/work/pdl17890/udl806719")
+_COMPUTE_ARCH = os.environ.get("EBJEPA_COMPUTE_ARCH", "aarch64")
+COMPUTE_PYTHON = f"{_WORK}/venvs/eb_jepa_{_COMPUTE_ARCH}/bin/python3"
+
 SLURM_DEFAULTS = {
-    "mem_per_gpu": "210G",
     "cpus_per_task": 16,
     "timeout_min": 24 * 60,
     "partition": "defq",
@@ -108,24 +112,21 @@ def make_executor(
     array_parallelism: int | None = None,
 ) -> submitit.AutoExecutor:
     """Create a submitit executor with standard SLURM parameters."""
-    executor = submitit.AutoExecutor(folder=folder, slurm_max_num_timeout=20)
+    executor = submitit.SlurmExecutor(folder=folder, python=COMPUTE_PYTHON, max_num_timeout=20)
 
     params = {
-        "name": job_name,
-        "slurm_mem_per_gpu": SLURM_DEFAULTS["mem_per_gpu"],
+        "job_name": job_name,
         "cpus_per_task": SLURM_DEFAULTS["cpus_per_task"],
-        "timeout_min": SLURM_DEFAULTS["timeout_min"],
-        "slurm_partition": SLURM_DEFAULTS["partition"],
-        "slurm_additional_parameters": {
-            "nodes": 1,
-            "ntasks-per-node": 1,
-            "gpus-per-node": SLURM_DEFAULTS["gpus_per_node"],
-            "account": SLURM_DEFAULTS["account"],
-        },
+        "time": SLURM_DEFAULTS["timeout_min"],
+        "partition": SLURM_DEFAULTS["partition"],
+        "gpus_per_node": SLURM_DEFAULTS["gpus_per_node"],
+        "account": SLURM_DEFAULTS["account"],
+        "nodes": 1,
+        "ntasks_per_node": 1,
     }
 
     if array_parallelism is not None:
-        params["slurm_array_parallelism"] = array_parallelism
+        params["array_parallelism"] = array_parallelism
 
     executor.update_parameters(**params)
     return executor
