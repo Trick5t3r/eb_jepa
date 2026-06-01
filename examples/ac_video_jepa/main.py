@@ -259,8 +259,10 @@ def run(
 
     # Compile
     if torch.cuda.is_available() and cfg.model.compile:
-        logger.info("✅ Compiling model with torch.compile")
-        jepa = torch.compile(jepa)
+        compile_mode = cfg.model.get("compile_mode")
+        compile_kwargs = {"mode": compile_mode} if compile_mode else {}
+        logger.info(f"✅ Compiling model with torch.compile (mode={compile_mode or 'default'})")
+        jepa = torch.compile(jepa, **compile_kwargs)
 
     # -- EVAL ONLY MODE
     if cfg.meta.get("eval_only_mode", False):
@@ -310,9 +312,9 @@ def run(
             itr_start_time = time()
             global_step = epoch * len(loader) + idx
 
-            x = x.to(device)
-            a = a.to(device)
-            loc = loc.to(device)
+            x = x.to(device, non_blocking=True)
+            a = a.to(device, non_blocking=True)
+            loc = loc.to(device, non_blocking=True)
             total_loss = torch.tensor(0.0, device=device)
 
             # Calculate JEPA loss

@@ -41,27 +41,25 @@ def init_data(env_name, cfg_data=None, **kwargs):
     num_workers = merged_cfg.get("num_workers", 0)
     pin_mem = merged_cfg.get("pin_mem", False)
     persistent_workers = merged_cfg.get("persistent_workers", False) and num_workers > 0
+    prefetch_factor = merged_cfg.get("prefetch_factor")
 
-    dset = WallDataset(config=config)
-    loader = torch.utils.data.DataLoader(
-        dset,
-        batch_size=config.batch_size,
-        shuffle=True,
+    loader_kwargs = dict(
         num_workers=num_workers,
         pin_memory=pin_mem,
         drop_last=True,
         persistent_workers=persistent_workers,
     )
+    if num_workers > 0 and prefetch_factor is not None:
+        loader_kwargs["prefetch_factor"] = prefetch_factor
+
+    dset = WallDataset(config=config)
+    loader = torch.utils.data.DataLoader(
+        dset, batch_size=config.batch_size, shuffle=True, **loader_kwargs
+    )
 
     val_dset = WallDataset(config=config)
     val_loader = torch.utils.data.DataLoader(
-        val_dset,
-        batch_size=4,
-        shuffle=False,
-        num_workers=num_workers,
-        pin_memory=pin_mem,
-        drop_last=True,
-        persistent_workers=persistent_workers,
+        val_dset, batch_size=4, shuffle=False, **loader_kwargs
     )
 
     return loader, val_loader, config
