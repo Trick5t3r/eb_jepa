@@ -156,10 +156,11 @@ def run(
         n_parallel_eval = eval_cfg_dict.get("meta", {}).get("n_parallel", 1)
 
         def env_creator():
-            from eb_jepa.datasets.two_rooms.env import DotWall
+            from eb_jepa.datasets.utils import create_env
 
-            cfg_eval_env = eval_cfg_dict.get("env")
-            return DotWall(
+            cfg_eval_env = eval_cfg_dict.get("env") or {}
+            return create_env(
+                cfg.data.env_name,
                 config=env_config,
                 **cfg_eval_env,
             )

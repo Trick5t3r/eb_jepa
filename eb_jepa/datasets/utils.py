@@ -1,10 +1,20 @@
+"""Top-level dataset dispatcher.
+
+``init_data`` is the single entry point used by ``examples/ac_video_jepa/main.py``.
+It selects an environment (``two_rooms`` or ``maze``) and within it a pipeline
+mode (``online`` / ``stream`` / ``offline``). Stream mode further selects a
+backend (``cpu`` workers or ``gpu`` vectorised generator).
+
+Each environment lives in its own sub-package; this dispatcher only knows
+their entry points.
+"""
+
 from pathlib import Path
 
 import torch
 import yaml
 
 from eb_jepa.datasets.two_rooms.utils import update_config_from_yaml
-from eb_jepa.datasets.two_rooms.wall_dataset import WallDataset, WallDatasetConfig
 
 DATASETS_DIR = Path(__file__).parent
 
@@ -25,40 +35,142 @@ def load_env_data_config(env_name: str, overrides: dict = None) -> dict:
     return base_config
 
 
+def _resolve_env(env_name):
+    """Return ``(DatasetClass, ConfigClass, Normalizer)`` for env_name."""
+    if env_name == "two_rooms":
+        from eb_jepa.datasets.two_rooms.normalizer import Normalizer
+        from eb_jepa.datasets.two_rooms.wall_dataset import (
+            WallDataset,
+            WallDatasetConfig,
+        )
+        return WallDataset, WallDatasetConfig, Normalizer
+    elif env_name == "maze":
+        from eb_jepa.datasets.maze.maze_dataset import (
+            MazeDataset,
+            MazeDatasetConfig,
+        )
+        from eb_jepa.datasets.maze.normalizer import MazeNormalizer
+        return MazeDataset, MazeDatasetConfig, MazeNormalizer
+    else:
+        raise ValueError(
+            f"Unknown env_name={env_name!r}; expected 'two_rooms' or 'maze'"
+        )
+
+
+def create_env(env_name, config, **kwargs):
+    """Build the gym-style env used by planning evaluation."""
+    if env_name == "two_rooms":
+        from eb_jepa.datasets.two_rooms.env import DotWall
+
+        return DotWall(config=config, **kwargs)
+    elif env_name == "maze":
+        from eb_jepa.datasets.maze.env import MazeEnv
+
+        return MazeEnv(config=config, **kwargs)
+    else:
+        raise ValueError(
+            f"Unknown env_name={env_name!r}; expected 'two_rooms' or 'maze'"
+        )
+
+
+def _init_gpu_stream(env_name, merged_cfg, config, chunk_size, device, dtype,
+                      gen_batch_size):
+    """Dispatch to the env-specific GPU stream pipeline."""
+    if env_name == "two_rooms":
+        from eb_jepa.datasets.gpu_precomputed import init_gpu_precomputed_data
+
+        return init_gpu_precomputed_data(
+            env_config_dict=merged_cfg,
+            chunk_size=chunk_size,
+            epoch_size=config.size,
+            batch_size=config.batch_size,
+            device=device,
+            dtype=dtype,
+            gen_batch_size=gen_batch_size,
+            drop_last=True,
+        )
+    elif env_name == "maze":
+        from eb_jepa.datasets.maze.gpu_generator import init_gpu_maze_data
+
+        return init_gpu_maze_data(
+            config=config,
+            chunk_size=chunk_size,
+            epoch_size=config.size,
+            batch_size=config.batch_size,
+            device=device,
+            dtype=dtype,
+            gen_batch_size=gen_batch_size,
+            drop_last=True,
+        )
+    else:
+        raise ValueError(f"Unknown env_name={env_name!r}")
+
+
+def _init_cpu_stream(env_name, merged_cfg, config, chunk_size, device, dtype,
+                      num_gen_workers, normalizer):
+    """Dispatch to the (env-agnostic) CPU stream pipeline."""
+    from eb_jepa.datasets.precomputed import init_precomputed_data
+
+    return init_precomputed_data(
+        env_config_dict=merged_cfg,
+        chunk_size=chunk_size,
+        epoch_size=config.size,
+        batch_size=config.batch_size,
+        device=device,
+        dtype=dtype,
+        num_workers=num_gen_workers,
+        drop_last=True,
+        env_name=env_name,
+        normalizer=normalizer,
+    )
+
+
+def _init_offline(env_name, pipeline_cfg, config, loader_kwargs):
+    data_dir = pipeline_cfg.get("data_dir")
+    if not data_dir:
+        raise ValueError(
+            "init_data: pipeline.data_dir must be set when pipeline.mode='offline'"
+        )
+    if env_name == "two_rooms":
+        from eb_jepa.datasets.two_rooms.offline_dataset import OfflineWallDataset
+
+        dset = OfflineWallDataset(data_dir)
+    elif env_name == "maze":
+        raise NotImplementedError(
+            "Offline mode is not yet supported for env_name='maze' — use 'online' or 'stream'"
+        )
+    else:
+        raise ValueError(f"Unknown env_name={env_name!r}")
+    config.size = len(dset)
+    loader = torch.utils.data.DataLoader(
+        dset, batch_size=config.batch_size, shuffle=True, **loader_kwargs
+    )
+    return loader
+
+
 def init_data(env_name, cfg_data=None, device=None, **kwargs):
     """Initialize data loaders for the specified environment.
 
-    Supports three pipeline modes via cfg_data["pipeline"]["mode"]:
+    Supports three pipeline modes via ``cfg_data["pipeline"]["mode"]``:
 
-      - "online" (default): standard DataLoader with on-the-fly CPU generation.
-        No extra config needed.
+      - ``online`` (default): standard DataLoader with on-the-fly CPU generation.
+      - ``stream``: GPU-resident double-buffered pipeline; swaps a small chunk
+        into VRAM every N training steps. ``pipeline.backend`` selects the
+        generation backend: ``cpu`` (worker pool) or ``gpu`` (vectorised on GPU).
+        Caller MUST invoke ``manager.warm_up()`` before iterating and
+        ``manager.shutdown()`` at the end of training.
+      - ``offline``: read pre-generated memmaps from disk. Only ``two_rooms``.
 
-      - "stream": GPU-resident double-buffered pipeline; swaps a small chunk into
-        VRAM every N training steps so the GPU never waits for a full epoch of data.
-        cfg_data["pipeline"]["backend"] selects the generation backend:
-          "cpu" — pool of CPU worker processes (AsyncChunkGenerator)
-          "gpu" — on-GPU vectorised generation (GPUWallGenerator)
-        Caller MUST invoke manager.warm_up() before iterating the loader,
-        and manager.shutdown() at the end of training.
-
-      - "offline": read pre-generated memmaps from disk.
-        Pre-generate once with eb_jepa/datasets/two_rooms/gpu_generator.py, then
-        point cfg_data["pipeline"]["data_dir"] at the output directory.
-
-    Args:
-        env_name: Name of the environment (currently only "two_rooms" is supported).
-        cfg_data: Configuration overrides for the dataset.
-        device: Required when pipeline.mode is "stream".
+    Supported envs: ``two_rooms``, ``maze``.
 
     Returns:
-        Tuple of (train_loader, val_loader, config, pipeline_manager).
-        pipeline_manager is None for "online" and "offline" modes.
+        Tuple of ``(train_loader, val_loader, config, pipeline_manager)``.
+        ``pipeline_manager`` is None for ``online`` and ``offline`` modes.
     """
-    if env_name != "two_rooms":
-        raise ValueError(f"Unknown env: {env_name}. Only 'two_rooms' is supported.")
+    DatasetClass, ConfigClass, NormalizerCls = _resolve_env(env_name)
 
     merged_cfg = load_env_data_config(env_name, cfg_data)
-    config = update_config_from_yaml(WallDatasetConfig, merged_cfg)
+    config = update_config_from_yaml(ConfigClass, merged_cfg)
 
     pipeline_cfg = (cfg_data or {}).get("pipeline") or {}
     mode = str(pipeline_cfg.get("mode", "online")).lower()
@@ -78,7 +190,7 @@ def init_data(env_name, cfg_data=None, device=None, **kwargs):
         loader_kwargs["prefetch_factor"] = prefetch_factor
 
     # Validation loader: always a small online generator (never the bottleneck).
-    val_dset = WallDataset(config=config)
+    val_dset = DatasetClass(config=config)
     val_loader = torch.utils.data.DataLoader(
         val_dset, batch_size=4, shuffle=False, **loader_kwargs
     )
@@ -99,33 +211,22 @@ def init_data(env_name, cfg_data=None, device=None, **kwargs):
         backend = str(pipeline_cfg.get("backend", "cpu")).lower()
 
         if backend == "gpu":
-            from eb_jepa.datasets.gpu_precomputed import init_gpu_precomputed_data
-
             gen_batch_size = pipeline_cfg.get("gen_batch_size")
             gen_batch_size = int(gen_batch_size) if gen_batch_size else None
-            loader, manager = init_gpu_precomputed_data(
-                env_config_dict=merged_cfg,
-                chunk_size=chunk_size,
-                epoch_size=config.size,
-                batch_size=config.batch_size,
-                device=device,
-                dtype=dtype,
-                gen_batch_size=gen_batch_size,
-                drop_last=True,
+            loader, manager = _init_gpu_stream(
+                env_name, merged_cfg, config, chunk_size, device, dtype,
+                gen_batch_size,
             )
         elif backend == "cpu":
-            from eb_jepa.datasets.precomputed import init_precomputed_data
-
             num_gen_workers = int(pipeline_cfg.get("num_gen_workers", 16))
-            loader, manager = init_precomputed_data(
-                env_config_dict=merged_cfg,
-                chunk_size=chunk_size,
-                epoch_size=config.size,
-                batch_size=config.batch_size,
-                device=device,
-                dtype=dtype,
-                num_workers=num_gen_workers,
-                drop_last=True,
+            # The PipelineLoader's _DatasetView needs a normalizer matching the env.
+            if env_name == "maze":
+                normalizer = NormalizerCls(img_size=config.img_size)
+            else:
+                normalizer = NormalizerCls()
+            loader, manager = _init_cpu_stream(
+                env_name, merged_cfg, config, chunk_size, device, dtype,
+                num_gen_workers, normalizer,
             )
         else:
             raise ValueError(
@@ -135,18 +236,7 @@ def init_data(env_name, cfg_data=None, device=None, **kwargs):
 
     # ---- offline mode ----
     if mode == "offline":
-        data_dir = pipeline_cfg.get("data_dir")
-        if not data_dir:
-            raise ValueError(
-                "init_data: pipeline.data_dir must be set when pipeline.mode='offline'"
-            )
-        from eb_jepa.datasets.two_rooms.offline_dataset import OfflineWallDataset
-
-        dset = OfflineWallDataset(data_dir)
-        config.size = len(dset)
-        loader = torch.utils.data.DataLoader(
-            dset, batch_size=config.batch_size, shuffle=True, **loader_kwargs
-        )
+        loader = _init_offline(env_name, pipeline_cfg, config, loader_kwargs)
         return loader, val_loader, config, None
 
     # ---- online mode (default) ----
@@ -154,7 +244,7 @@ def init_data(env_name, cfg_data=None, device=None, **kwargs):
         raise ValueError(
             f"Unknown pipeline.mode={mode!r}; expected 'online', 'stream', or 'offline'"
         )
-    dset = WallDataset(config=config)
+    dset = DatasetClass(config=config)
     loader = torch.utils.data.DataLoader(
         dset, batch_size=config.batch_size, shuffle=True, **loader_kwargs
     )
