@@ -40,12 +40,40 @@ _DTYPE_MAP = {
 }
 
 
-def _worker_init(env_config_dict):
+def _resolve_dataset(env_name):
+    """Lazy lookup of (DatasetClass, ConfigClass) for a worker process.
+
+    Imports are done inside the function so each env module is only loaded
+    when actually used (and each loads its own dependencies).
+    """
+    if env_name == "two_rooms":
+        from eb_jepa.datasets.two_rooms.wall_dataset import (
+            WallDataset as DatasetClass,
+        )
+        from eb_jepa.datasets.two_rooms.wall_dataset import (
+            WallDatasetConfig as ConfigClass,
+        )
+    elif env_name == "maze":
+        from eb_jepa.datasets.maze.maze_dataset import (
+            MazeDataset as DatasetClass,
+        )
+        from eb_jepa.datasets.maze.maze_dataset import (
+            MazeDatasetConfig as ConfigClass,
+        )
+    else:
+        raise ValueError(
+            f"Unknown env_name={env_name!r}; expected 'two_rooms' or 'maze'"
+        )
+    return DatasetClass, ConfigClass
+
+
+def _worker_init(env_name, env_config_dict):
     global _WORKER_DATASET
+    DatasetClass, ConfigClass = _resolve_dataset(env_name)
     cfg_for_worker = dict(env_config_dict)
     cfg_for_worker["device"] = "cpu"
-    config = update_config_from_yaml(WallDatasetConfig, cfg_for_worker)
-    _WORKER_DATASET = WallDataset(config=config)
+    config = update_config_from_yaml(ConfigClass, cfg_for_worker)
+    _WORKER_DATASET = DatasetClass(config=config)
 
 
 def _generate_part(seed, n_samples, dtype_name=None):
@@ -93,7 +121,7 @@ def _generate_part(seed, n_samples, dtype_name=None):
 class AsyncChunkGenerator:
     """Persistent pool of CPU workers that produce chunks of samples in parallel."""
 
-    def __init__(self, env_config_dict, num_workers, dtype=None):
+    def __init__(self, env_name, env_config_dict, num_workers, dtype=None):
         self.num_workers = num_workers
         _rev = {v: k for k, v in _DTYPE_MAP.items()}
         self._dtype_name = _rev.get(dtype)
@@ -102,7 +130,7 @@ class AsyncChunkGenerator:
             max_workers=num_workers,
             mp_context=ctx,
             initializer=_worker_init,
-            initargs=(env_config_dict,),
+            initargs=(env_name, env_config_dict),
         )
 
     def submit(self, chunk_id, chunk_size):
@@ -162,11 +190,13 @@ class _DatasetView:
 class PipelineManager:
     """Owns the double-buffered VRAM chunks and orchestrates async refill."""
 
-    def __init__(self, env_config_dict, chunk_size, device, dtype, num_workers):
+    def __init__(self, env_name, env_config_dict, chunk_size, device, dtype, num_workers):
         self.chunk_size = chunk_size
         self.device = device
         self.dtype = dtype
-        self.generator = AsyncChunkGenerator(env_config_dict, num_workers, dtype=dtype)
+        self.generator = AsyncChunkGenerator(
+            env_name, env_config_dict, num_workers, dtype=dtype
+        )
         self.transfer_stream = torch.cuda.Stream(device=device)
         self._transfer_executor = ThreadPoolExecutor(max_workers=1)
 
@@ -300,6 +330,8 @@ def init_precomputed_data(
     dtype,
     num_workers,
     drop_last=True,
+    env_name="two_rooms",
+    normalizer=None,
 ):
     """Build the pipeline manager and a PipelineLoader. Caller must invoke
     `manager.warm_up()` once before iterating the loader.
@@ -315,6 +347,7 @@ def init_precomputed_data(
         manager: PipelineManager (caller owns lifecycle, must call shutdown()).
     """
     manager = PipelineManager(
+        env_name=env_name,
         env_config_dict=env_config_dict,
         chunk_size=chunk_size,
         device=device,
@@ -326,6 +359,6 @@ def init_precomputed_data(
         batch_size=batch_size,
         epoch_size=epoch_size,
         drop_last=drop_last,
-        normalizer=Normalizer(),
+        normalizer=normalizer if normalizer is not None else Normalizer(),
     )
     return loader, manager
