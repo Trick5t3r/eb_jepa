@@ -170,10 +170,17 @@ def main_eval(
     env_creator,
     eval_folder,
     num_episodes=10,
+    n_parallel=1,
     loader=None,
     prober=None,
 ):
     plan_cfg = OmegaConf.create(plan_cfg)
+
+    if n_parallel > 1:
+        return _main_eval_parallel(
+            plan_cfg, model, env_creator, eval_folder, num_episodes, n_parallel, prober
+        )
+
     env = env_creator()
     env.reset()
 
@@ -296,6 +303,7 @@ def main_eval(
         successes.append(success)
         distances.append(state_dist)
 
+        save_path = f"{ep_folder}/agent_steps_{'succ' if success else 'fail'}.gif"
         if plan_cfg.logging.get("optional_plots", True):
             analyze_distances(
                 episode_observations[-1],
@@ -315,16 +323,16 @@ def main_eval(
                 work_dir=ep_folder,
                 num_act_stepped=agent.num_act_stepped,
             )
-            save_path = f"{ep_folder}/agent_steps_{'succ' if success else 'fail'}.gif"
-        save_gif(
-            episode_observations[-1],
-            save_path=save_path,
-            show_frame_numbers=True,
-            fps=20,
-            init_frame=observations[0],
-            goal_frame=goal_img,
-        )
-        logger.info(f"GIF saved to {save_path}")
+        if plan_cfg.logging.get("save_gif", True):
+            save_gif(
+                episode_observations[-1],
+                save_path=save_path,
+                show_frame_numbers=True,
+                fps=20,
+                init_frame=observations[0],
+                goal_frame=goal_img,
+            )
+            logger.info(f"GIF saved to {save_path}")
         episode_end_time = time.time()  # Add this line
         episode_times.append(episode_end_time - episode_start_time)
     avg_episode_time = np.mean(episode_times)
@@ -332,6 +340,187 @@ def main_eval(
         "success_rate": np.mean(successes),
         "mean_state_dist": np.mean(distances),
         "avg_episode_time": avg_episode_time,
+    }
+    pd.DataFrame([task_data]).to_csv(f"{eval_folder}/eval.csv", mode="a", index=None)
+    return task_data
+
+
+def _main_eval_parallel(
+    plan_cfg,
+    model,
+    env_creator,
+    eval_folder,
+    num_episodes,
+    n_parallel,
+    prober=None,
+):
+    """Run eval with up to n_parallel episodes in lockstep, batching MPPI across envs.
+
+    At each env step, instead of running K separate MPPI calls of batch=num_samples,
+    we run ONE MPPI call of batch=K*num_samples. This amortises GPU kernel launch
+    overhead and improves utilisation when num_samples alone under-saturates the GPU.
+    """
+    device = next(model.parameters()).device
+    K = min(n_parallel, num_episodes)
+    envs = [env_creator() for _ in range(K)]
+    normalizer = envs[0].normalizer
+
+    p = plan_cfg.planner
+    num_samples = p.num_samples
+    n_iters = p.n_iters
+    num_elites = p.num_elites
+    temperature = p.get("temperature", 0.005)
+    max_std = p.get("max_std", 2.0)
+    # NOTE: MPPIPlanner.plan() does NOT apply max_norms clipping (only CEMPlanner does).
+    # To match sequential MPPI behavior, we do not clip actions here either.
+    num_act_stepped = p.get("num_act_stepped", 1)
+    sum_all_diffs = p.planning_objective.get("sum_all_diffs", True)
+    save_gif_flag = plan_cfg.logging.get("save_gif", True)
+
+    logger.info(
+        f"Parallel eval: {num_episodes} episodes, K={K}, batch={K * num_samples} per MPPI iter"
+    )
+
+    all_successes, all_distances, all_times = [], [], []
+
+    for batch_start in range(0, num_episodes, K):
+        batch_K = min(K, num_episodes - batch_start)
+        active_envs = envs[:batch_K]
+        t_batch_start = time.time()
+
+        # Reset envs and encode goals
+        obs_list, goal_imgs, goal_encs = [], [], []
+        for env in active_envs:
+            obs, info = env.reset()
+            obs, _, _, _, info = env.step(np.zeros(env.action_space.shape[0]))
+            goal_img = info["target_obs"].to(dtype=torch.float32)
+            goal_enc = model.encode(
+                normalizer.normalize_state(goal_img.to(device)).unsqueeze(0).unsqueeze(2)
+            )  # (1, D, 1, H', W')
+            obs_list.append(obs)
+            goal_imgs.append(goal_img)
+            goal_encs.append(goal_enc)
+
+        goal_enc_batch = torch.cat(goal_encs, dim=0)  # (batch_K, D, 1, H', W')
+
+        all_obs_k = [[obs_list[k]] for k in range(batch_K)]
+        success_k = [False] * batch_K
+        dist_k = [0.0] * batch_K
+        n_steps = active_envs[0].n_allowed_steps
+
+        for step_idx in range(n_steps):
+            steps_left = n_steps - step_idx
+            plan_length = min(p.plan_length, steps_left)
+            action_dim = 2
+
+            obs_tensors = [
+                normalizer.normalize_state(
+                    obs_list[k].to(dtype=torch.float32, device=device)
+                ).unsqueeze(0).unsqueeze(2)
+                for k in range(batch_K)
+            ]
+            obs_batch = torch.cat(obs_tensors, dim=0)  # (batch_K, C, 1, H, W)
+            obs_expanded = obs_batch.repeat_interleave(num_samples, dim=0)
+
+            means = torch.zeros(batch_K, plan_length, action_dim, device=device)
+            stds = max_std * torch.ones(batch_K, plan_length, action_dim, device=device)
+
+            for _ in range(n_iters):
+                noise = torch.randn(batch_K, plan_length, num_samples, action_dim, device=device)
+                actions_k = means.unsqueeze(2) + stds.unsqueeze(2) * noise
+                actions_flat = rearrange(actions_k, "k t s a -> (k s) a t")
+
+                with torch.no_grad():
+                    predicted_states, _ = model.unroll(
+                        obs_expanded,
+                        actions_flat,
+                        nsteps=plan_length,
+                        unroll_mode="autoregressive",
+                        ctxt_window_time=plan_cfg.get("ctxt_window_time", 1),
+                        compute_loss=False,
+                        return_all_steps=False,
+                    )
+
+                goal_expanded = goal_enc_batch[:batch_K].repeat_interleave(num_samples, dim=0)
+                if goal_expanded.shape[2] != predicted_states.shape[2]:
+                    goal_expanded = goal_expanded.expand(
+                        -1, -1, predicted_states.shape[2], -1, -1
+                    )
+                diff = torch.nn.functional.mse_loss(
+                    goal_expanded, predicted_states, reduction="none"
+                ).mean(dim=(1, 3, 4))  # (batch_K*S, T)
+                costs_flat = diff.sum(dim=1) if sum_all_diffs else diff[:, -1]
+                costs = costs_flat.reshape(batch_K, num_samples)
+
+                elite_idx = torch.topk(-costs, num_elites, dim=1).indices
+                elite_costs = costs.gather(1, elite_idx)
+                min_costs = costs.min(dim=1, keepdim=True).values
+                scores = torch.exp(temperature * (min_costs - elite_costs))
+                scores = scores / (scores.sum(dim=1, keepdim=True) + 1e-9)
+
+                idx_e = elite_idx[:, None, :, None].expand(
+                    batch_K, plan_length, num_elites, action_dim
+                )
+                elite_acts = actions_k.gather(2, idx_e)
+
+                s = scores[:, None, :, None]
+                score_sum = scores.sum(dim=1).view(batch_K, 1, 1)
+                means = (s * elite_acts).sum(dim=2) / (score_sum + 1e-9)
+                stds = torch.sqrt(
+                    (s * (elite_acts - means.unsqueeze(2)) ** 2).sum(dim=2)
+                    / (score_sum + 1e-9)
+                )
+
+            # Stochastic elite selection — matches MPPIPlanner.plan() (eval_mode=False)
+            chosen = torch.multinomial(scores, num_samples=1, replacement=True).squeeze(1)
+            idx_c = chosen[:, None, None, None].expand(batch_K, plan_length, 1, action_dim)
+            selected_acts = elite_acts.gather(2, idx_c).squeeze(2)  # (batch_K, T, A)
+            post_noise = torch.randn(batch_K, action_dim, device=device)
+            selected_acts = selected_acts + stds * post_noise.unsqueeze(1)
+
+            actions_to_step = selected_acts[:, :num_act_stepped, :].cpu().numpy()
+            for k in range(batch_K):
+                for a in actions_to_step[k]:
+                    obs_k, _, _, _, info_k = active_envs[k].step(a)
+                all_obs_k[k].append(obs_k)
+                obs_list[k] = obs_k
+                result = active_envs[k].eval_state(
+                    info_k["target_position"], info_k["dot_position"]
+                )
+                success_k[k] = result["success"]
+                dist_k[k] = result["state_dist"]
+
+        t_batch_end = time.time()
+        per_ep_time = (t_batch_end - t_batch_start) / batch_K
+
+        for k in range(batch_K):
+            ep_idx = batch_start + k
+            all_successes.append(success_k[k])
+            all_distances.append(dist_k[k])
+            all_times.append(per_ep_time)
+            if save_gif_flag:
+                ep_folder = eval_folder / f"ep_{ep_idx}"
+                os.makedirs(ep_folder, exist_ok=True)
+                label = "succ" if success_k[k] else "fail"
+                obs_stack = torch.stack(all_obs_k[k])
+                save_gif(
+                    obs_stack,
+                    save_path=str(ep_folder / f"agent_steps_{label}.gif"),
+                    show_frame_numbers=True,
+                    fps=20,
+                    init_frame=all_obs_k[k][0],
+                    goal_frame=goal_imgs[k],
+                )
+
+        logger.info(
+            f"Batch {batch_start // K + 1}: success={np.mean(success_k[:batch_K]):.2f} "
+            f"dist={np.mean(dist_k[:batch_K]):.4f} time={per_ep_time:.1f}s/ep"
+        )
+
+    task_data = {
+        "success_rate": float(np.mean(all_successes)),
+        "mean_state_dist": float(np.mean(all_distances)),
+        "avg_episode_time": float(np.mean(all_times)),
     }
     pd.DataFrame([task_data]).to_csv(f"{eval_folder}/eval.csv", mode="a", index=None)
     return task_data

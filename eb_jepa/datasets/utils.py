@@ -8,6 +8,12 @@ from eb_jepa.datasets.two_rooms.wall_dataset import WallDataset, WallDatasetConf
 
 DATASETS_DIR = Path(__file__).parent
 
+_DTYPE_MAP = {
+    "float32": torch.float32,
+    "float16": torch.float16,
+    "bfloat16": torch.bfloat16,
+}
+
 
 def load_env_data_config(env_name: str, overrides: dict = None) -> dict:
     """Load base data config for an environment and apply overrides."""
@@ -19,24 +25,43 @@ def load_env_data_config(env_name: str, overrides: dict = None) -> dict:
     return base_config
 
 
-def init_data(env_name, cfg_data=None, **kwargs):
+def init_data(env_name, cfg_data=None, device=None, **kwargs):
     """Initialize data loaders for the specified environment.
 
-    Loads base config from eb_jepa/datasets/{env_name}/data_config.yaml
-    and merges with any overrides from cfg_data.
+    Supports three pipeline modes via cfg_data["pipeline"]["mode"]:
+
+      - "online" (default): standard DataLoader with on-the-fly CPU generation.
+        No extra config needed.
+
+      - "stream": GPU-resident double-buffered pipeline; swaps a small chunk into
+        VRAM every N training steps so the GPU never waits for a full epoch of data.
+        cfg_data["pipeline"]["backend"] selects the generation backend:
+          "cpu" — pool of CPU worker processes (AsyncChunkGenerator)
+          "gpu" — on-GPU vectorised generation (GPUWallGenerator)
+        Caller MUST invoke manager.warm_up() before iterating the loader,
+        and manager.shutdown() at the end of training.
+
+      - "offline": read pre-generated memmaps from disk.
+        Pre-generate once with eb_jepa/datasets/two_rooms/gpu_generator.py, then
+        point cfg_data["pipeline"]["data_dir"] at the output directory.
 
     Args:
         env_name: Name of the environment (currently only "two_rooms" is supported).
         cfg_data: Configuration overrides for the dataset.
+        device: Required when pipeline.mode is "stream".
 
     Returns:
-        Tuple of (train_loader, val_loader, config).
+        Tuple of (train_loader, val_loader, config, pipeline_manager).
+        pipeline_manager is None for "online" and "offline" modes.
     """
     if env_name != "two_rooms":
         raise ValueError(f"Unknown env: {env_name}. Only 'two_rooms' is supported.")
 
     merged_cfg = load_env_data_config(env_name, cfg_data)
     config = update_config_from_yaml(WallDatasetConfig, merged_cfg)
+
+    pipeline_cfg = (cfg_data or {}).get("pipeline") or {}
+    mode = str(pipeline_cfg.get("mode", "online")).lower()
 
     num_workers = merged_cfg.get("num_workers", 0)
     pin_mem = merged_cfg.get("pin_mem", False)
@@ -52,14 +77,85 @@ def init_data(env_name, cfg_data=None, **kwargs):
     if num_workers > 0 and prefetch_factor is not None:
         loader_kwargs["prefetch_factor"] = prefetch_factor
 
-    dset = WallDataset(config=config)
-    loader = torch.utils.data.DataLoader(
-        dset, batch_size=config.batch_size, shuffle=True, **loader_kwargs
-    )
-
+    # Validation loader: always a small online generator (never the bottleneck).
     val_dset = WallDataset(config=config)
     val_loader = torch.utils.data.DataLoader(
         val_dset, batch_size=4, shuffle=False, **loader_kwargs
     )
 
-    return loader, val_loader, config
+    # ---- stream mode ----
+    if mode == "stream":
+        if device is None:
+            raise ValueError(
+                "init_data: device must be provided when pipeline.mode='stream'"
+            )
+        chunk_size = int(pipeline_cfg.get("chunk_size", merged_cfg["size"]))
+        dtype_name = str(pipeline_cfg.get("dtype", "bfloat16")).lower()
+        dtype = _DTYPE_MAP.get(dtype_name)
+        if dtype is None:
+            raise ValueError(
+                f"Unknown pipeline.dtype={dtype_name!r}; expected one of {list(_DTYPE_MAP)}"
+            )
+        backend = str(pipeline_cfg.get("backend", "cpu")).lower()
+
+        if backend == "gpu":
+            from eb_jepa.datasets.gpu_precomputed import init_gpu_precomputed_data
+
+            gen_batch_size = pipeline_cfg.get("gen_batch_size")
+            gen_batch_size = int(gen_batch_size) if gen_batch_size else None
+            loader, manager = init_gpu_precomputed_data(
+                env_config_dict=merged_cfg,
+                chunk_size=chunk_size,
+                epoch_size=config.size,
+                batch_size=config.batch_size,
+                device=device,
+                dtype=dtype,
+                gen_batch_size=gen_batch_size,
+                drop_last=True,
+            )
+        elif backend == "cpu":
+            from eb_jepa.datasets.precomputed import init_precomputed_data
+
+            num_gen_workers = int(pipeline_cfg.get("num_gen_workers", 16))
+            loader, manager = init_precomputed_data(
+                env_config_dict=merged_cfg,
+                chunk_size=chunk_size,
+                epoch_size=config.size,
+                batch_size=config.batch_size,
+                device=device,
+                dtype=dtype,
+                num_workers=num_gen_workers,
+                drop_last=True,
+            )
+        else:
+            raise ValueError(
+                f"Unknown pipeline.backend={backend!r}; expected 'cpu' or 'gpu'"
+            )
+        return loader, val_loader, config, manager
+
+    # ---- offline mode ----
+    if mode == "offline":
+        data_dir = pipeline_cfg.get("data_dir")
+        if not data_dir:
+            raise ValueError(
+                "init_data: pipeline.data_dir must be set when pipeline.mode='offline'"
+            )
+        from eb_jepa.datasets.two_rooms.offline_dataset import OfflineWallDataset
+
+        dset = OfflineWallDataset(data_dir)
+        config.size = len(dset)
+        loader = torch.utils.data.DataLoader(
+            dset, batch_size=config.batch_size, shuffle=True, **loader_kwargs
+        )
+        return loader, val_loader, config, None
+
+    # ---- online mode (default) ----
+    if mode != "online":
+        raise ValueError(
+            f"Unknown pipeline.mode={mode!r}; expected 'online', 'stream', or 'offline'"
+        )
+    dset = WallDataset(config=config)
+    loader = torch.utils.data.DataLoader(
+        dset, batch_size=config.batch_size, shuffle=True, **loader_kwargs
+    )
+    return loader, val_loader, config, None
