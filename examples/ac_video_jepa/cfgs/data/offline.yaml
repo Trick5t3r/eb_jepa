@@ -1,0 +1,23 @@
+# Offline pipeline (Pack 8): read pre-generated memmaps from disk.
+#
+# Step 1 — Pre-generate the dataset once (GPU):
+#   python -m eb_jepa.datasets.two_rooms.gpu_generator \
+#     --out_dir /path/to/dataset \
+#     --n_samples 1200000 \
+#     --env_name two_rooms
+#
+# Step 2 — Train with this config, pointing data_dir at the output of step 1.
+#
+# Notes:
+#   - config.size is overridden at runtime by the actual dataset length.
+#   - num_workers controls DataLoader workers for disk reads; 4-8 is usually enough.
+data:
+  env_name: two_rooms
+  batch_size: 384
+  num_workers: 8
+  pin_mem: true
+  persistent_workers: true
+  prefetch_factor: 2
+  pipeline:
+    mode: offline
+    data_dir: /path/to/dataset   # <-- set this to your pre-generated dataset directory

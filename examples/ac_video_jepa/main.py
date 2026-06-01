@@ -85,14 +85,20 @@ def run(
 
     os.makedirs(folder, exist_ok=True)
 
-    loader, val_loader, data_config = init_data(
-        env_name=cfg.data.env_name, cfg_data=dict(cfg.data)
-    )
-
-    # -- SETUP
+    # -- SETUP (device must be ready before init_data for stream pipeline mode)
     setup_device("auto")
     setup_seed(cfg.meta.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    loader, val_loader, data_config, data_pipeline = init_data(
+        env_name=cfg.data.env_name,
+        cfg_data=OmegaConf.to_container(cfg.data, resolve=True),
+        device=device,
+    )
+    if data_pipeline is not None:
+        logger.info("Warming up data pipeline (stream mode: loading chunks 0 and 1)...")
+        data_pipeline.warm_up()
+        logger.info("Pipeline warm-up complete.")
 
     # -- WANDB
     wandb_run = setup_wandb(
@@ -129,19 +135,25 @@ def run(
     env_creator = None
     plan_cfg = None
     num_eval_episodes = 10
+    n_parallel_eval = 1
 
     if enable_eval:
         if cfg.meta.eval_every_itr <= 0:
             cfg.meta.eval_every_itr = len(loader)
         with open(cfg.eval.plan_cfg_path, "r") as f:
             plan_cfg = yaml.load(f, Loader=yaml.FullLoader)
-        plan_cfg["logging"] = copy.deepcopy(dict(cfg.logging))
+        # Merge training logging into plan_cfg so eval-specific keys
+        # (save_gif, optional_plots) from planning_mppi.yaml are preserved.
+        plan_cfg_logging = plan_cfg.get("logging") or {}
+        plan_cfg_logging.update(dict(cfg.logging))
+        plan_cfg["logging"] = plan_cfg_logging
         with open(cfg.eval.eval_cfg_path, "r") as f:
             eval_cfg_dict = yaml.safe_load(f)
-        _, _, env_config = init_data(
+        _, _, env_config, _ = init_data(
             env_name=cfg.data.env_name, cfg_data=dict(eval_cfg_dict.get("data", {}))
         )
         num_eval_episodes = eval_cfg_dict.get("meta", {}).get("num_eval_episodes", 10)
+        n_parallel_eval = eval_cfg_dict.get("meta", {}).get("n_parallel", 1)
 
         def env_creator():
             from eb_jepa.datasets.two_rooms.env import DotWall
@@ -287,6 +299,7 @@ def run(
                 global_step=ckpt_info.get("step", 0),
                 suffix="_eval_only",
                 num_eval_episodes=num_eval_episodes,
+                n_parallel=n_parallel_eval,
                 loader=val_loader,
                 prober=xy_prober,
                 plan_cfg=plan_cfg,
@@ -401,6 +414,7 @@ def run(
                     global_step,
                     suffix="",
                     num_eval_episodes=num_eval_episodes,
+                    n_parallel=n_parallel_eval,
                     loader=val_loader,
                     prober=xy_prober,
                     plan_cfg=plan_cfg,
@@ -475,6 +489,9 @@ def run(
                 probe_optimizer_state_dict=probe_optimizer.state_dict(),
                 probe_scheduler_state_dict=probe_scheduler.state_dict(),
             )
+
+    if data_pipeline is not None:
+        data_pipeline.shutdown()
 
 
 if __name__ == "__main__":

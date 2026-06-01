@@ -23,6 +23,7 @@ def launch_plan_eval(
     global_step,
     suffix="",
     num_eval_episodes=10,
+    n_parallel=1,
     loader=None,
     prober=None,
     plan_cfg=None,
@@ -45,6 +46,7 @@ def launch_plan_eval(
         env_creator=env_creator,
         eval_folder=eval_folder,
         num_episodes=num_eval_episodes,
+        n_parallel=n_parallel,
         loader=loader,
         prober=prober,
     )
