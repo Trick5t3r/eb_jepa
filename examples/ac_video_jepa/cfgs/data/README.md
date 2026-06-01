@@ -1,0 +1,131 @@
+# Data pipeline configuration
+
+This directory contains example configs for the three data pipeline modes
+available in `two_rooms` training. Select a mode via `data.pipeline.mode`
+in your training config.
+
+---
+
+## Modes
+
+### `online` — on-the-fly CPU generation (default)
+
+```yaml
+data:
+  pipeline:
+    mode: online
+```
+
+Standard PyTorch `DataLoader` backed by `WallDataset`. Each worker calls
+`generate_multistep_sample()` on the fly. Simple, no warm-up needed.
+Use this for quick experiments or when CPU generation is fast enough.
+
+---
+
+### `stream` — GPU-resident double-buffer
+
+```yaml
+data:
+  pipeline:
+    mode: stream
+    backend: cpu   # or gpu
+    chunk_size: 3840
+    dtype: bfloat16
+    # cpu backend only:
+    num_gen_workers: 16
+    # gpu backend only:
+    gen_batch_size: null
+```
+
+Two small chunks of samples live permanently in GPU VRAM (double-buffer).
+Every `chunk_size // batch_size` training steps the pipeline swaps:
+promotes the pre-fetched next chunk to current, kicks off a new async
+generation in the background. The GPU never waits for a full epoch of data.
+
+**Caller contract** (handled automatically by `main.py`):
+- call `manager.warm_up()` once after device setup, before training
+- call `manager.shutdown()` at the end of training
+
+#### `backend: cpu`
+
+Generation runs in a pool of CPU worker processes (`AsyncChunkGenerator`).
+Tune `num_gen_workers` to the number of available CPUs minus a few for the
+main process and OS.
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `chunk_size` | dataset size | Samples per swap. Must evenly divide `epoch_size // batch_size`. |
+| `num_gen_workers` | 16 | CPU cores used for generation. |
+| `dtype` | `bfloat16` | Cast samples in workers to halve their RAM footprint. |
+
+#### `backend: gpu`
+
+Generation runs on a dedicated CUDA stream using vectorised GPU kernels
+(`GPUWallGenerator`). Much faster than CPU generation on large GPU nodes;
+no CPU worker pool needed.
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `chunk_size` | dataset size | Samples per swap. |
+| `gen_batch_size` | `chunk_size` | Trajectories per GPU kernel call. Larger = fewer launches but more VRAM. |
+| `dtype` | `bfloat16` | Output dtype of generated chunk. |
+
+---
+
+### `offline` — pre-generated memmaps from disk
+
+```yaml
+data:
+  pipeline:
+    mode: offline
+    data_dir: /path/to/dataset
+```
+
+Reads a fixed dataset of numpy memmaps pre-generated once and stored on
+disk (e.g. Lustre). Training uses a standard `DataLoader` with `OfflineWallDataset`.
+No online generation overhead during training.
+
+**Step 1 — generate the dataset (once):**
+
+```bash
+python -m eb_jepa.datasets.two_rooms.gpu_generator \
+  --out_dir /path/to/dataset \
+  --n_samples 1200000 \
+  --env_name two_rooms
+```
+
+**Step 2 — train** with `pipeline.mode: offline` and `data_dir` pointing at the output.
+
+| Option | Required | Description |
+|--------|----------|-------------|
+| `data_dir` | yes | Path to the directory produced by `gpu_generator.py`. |
+
+`config.size` is automatically overridden at runtime by the actual dataset length.
+
+---
+
+## Summary
+
+| Mode | Generation | Warm-up needed | When to use |
+|------|-----------|----------------|-------------|
+| `online` | per-batch CPU | no | quick experiments |
+| `stream cpu` | async CPU workers | yes | large CPU nodes, moderate GPU |
+| `stream gpu` | async GPU kernels | yes | large GPU nodes, generation bottleneck |
+| `offline` | pre-generated disk | no | repeated training runs on same data |
+
+## Parallel eval
+
+All modes support batched MPPI evaluation across multiple environments in lockstep.
+Set `meta.n_parallel` in your eval config (e.g. `cfgs/eval.yaml`) to run `n_parallel`
+episodes simultaneously — one batched MPPI call instead of N sequential ones.
+
+```yaml
+# eval.yaml
+meta:
+  num_eval_episodes: 20
+  n_parallel: 20   # 1 = sequential (default), >1 = parallel
+```
+
+> **Note:** a single parallel batch of K episodes is one correlated draw, not K
+> independent samples. For reliable success-rate estimates use sequential eval
+> (`n_parallel: 1`) or average several parallel batches.
