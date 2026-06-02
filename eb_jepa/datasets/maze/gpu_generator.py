@@ -12,6 +12,9 @@ Public surface:
     two_rooms path: triple-buffered VRAM chunks with a dedicated gen stream.
 """
 
+from concurrent.futures import ProcessPoolExecutor
+from multiprocessing import get_context
+
 import numpy as np
 import torch
 
@@ -29,16 +32,69 @@ from eb_jepa.logging import get_logger
 logger = get_logger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# Parallel CPU sampling — DFS maze + A* solve are sequential Python, so the
+# only way to scale them is across processes (the GIL blocks threads). Each
+# worker holds the config and produces a sub-batch of raw numpy arrays which
+# the main process concatenates and uploads to the GPU for rendering.
+# ---------------------------------------------------------------------------
+
+_MAZE_WORKER_CFG: MazeDatasetConfig = None
+
+
+def _maze_worker_init(config):
+    global _MAZE_WORKER_CFG
+    _MAZE_WORKER_CFG = config
+
+
+def _maze_sample_part(seed, n):
+    """Generate ``n`` maze samples in a worker process (pure numpy)."""
+    cfg = _MAZE_WORKER_CFG
+    assert cfg is not None, "maze worker not initialized"
+    rng = np.random.default_rng(seed)
+    H, W = cfg.maze_height, cfg.maze_width
+    n_steps = cfg.n_steps
+    n_act = n_steps - 1
+
+    mazes = np.empty((n, H, W), dtype=np.uint8)
+    cell_positions = np.empty((n, n_steps, 2), dtype=np.int32)
+    action_vecs = np.zeros((n, n_act, 2), dtype=np.float32)
+    for i in range(n):
+        m, cp, av, _, _ = generate_path_and_actions(cfg, rng=rng)
+        mazes[i] = m
+        cell_positions[i] = cp
+        action_vecs[i] = av
+    return mazes, cell_positions, action_vecs
+
+
 class GPUMazeGenerator:
     """Generate (B, 2, sample_length, H, W) chunks with GPU rendering."""
 
-    def __init__(self, config: MazeDatasetConfig, device, dtype, gen_batch_size=None):
+    def __init__(self, config: MazeDatasetConfig, device, dtype, gen_batch_size=None,
+                 num_workers=0):
         self.config = config
         self.device = torch.device(device)
         self.dtype = dtype
         self.gen_batch_size = gen_batch_size
         self.normalizer = MazeNormalizer(img_size=config.img_size)
         self._rng = np.random.default_rng()
+
+        # Parallel CPU sampling pool (spawn-safe; main process holds CUDA).
+        self.num_workers = int(num_workers or 0)
+        self._gen_call_id = 0
+        self._executor = None
+        if self.num_workers > 1:
+            ctx = get_context("spawn")
+            self._executor = ProcessPoolExecutor(
+                max_workers=self.num_workers,
+                mp_context=ctx,
+                initializer=_maze_worker_init,
+                initargs=(config,),
+            )
+            logger.info(
+                "GPUMazeGenerator: parallel CPU sampling with %d workers",
+                self.num_workers,
+            )
 
         # Cached render grid (float32) for the agent dot.
         img = config.img_size
@@ -51,6 +107,16 @@ class GPUMazeGenerator:
     # ------------------------------------------------------------------
 
     def _sample_batch_cpu(self, bs):
+        cfg = self.config
+        if self._executor is not None:
+            mazes, cell_positions, action_vecs = self._sample_batch_parallel(bs)
+        else:
+            mazes, cell_positions, action_vecs = self._sample_batch_seq(bs)
+
+        pixel_positions = cell_to_pixel(cell_positions, cfg.cell_size)  # (B, T, 2)
+        return mazes, pixel_positions, action_vecs
+
+    def _sample_batch_seq(self, bs):
         cfg = self.config
         n_steps = cfg.n_steps
         n_act = n_steps - 1
@@ -65,9 +131,46 @@ class GPUMazeGenerator:
             mazes[i] = m
             cell_positions[i] = cp
             action_vecs[i] = av
+        return mazes, cell_positions, action_vecs
 
-        pixel_positions = cell_to_pixel(cell_positions, cfg.cell_size)  # (B, T, 2)
-        return mazes, pixel_positions, action_vecs
+    def _sample_batch_parallel(self, bs):
+        """Split ``bs`` samples across the worker pool and reassemble."""
+        cfg = self.config
+        n_steps = cfg.n_steps
+        n_act = n_steps - 1
+        H, W = cfg.maze_height, cfg.maze_width
+        nw = self.num_workers
+
+        per = bs // nw
+        rem = bs - per * nw
+        seed_base = (self._gen_call_id + 1) * 1_000_003
+        self._gen_call_id += 1
+
+        futures, counts = [], []
+        for i in range(nw):
+            n = per + (1 if i < rem else 0)
+            if n > 0:
+                futures.append(
+                    self._executor.submit(_maze_sample_part, seed_base + i, n)
+                )
+                counts.append(n)
+
+        mazes = np.empty((bs, H, W), dtype=np.uint8)
+        cell_positions = np.empty((bs, n_steps, 2), dtype=np.int32)
+        action_vecs = np.empty((bs, n_act, 2), dtype=np.float32)
+        off = 0
+        for f, n in zip(futures, counts):
+            m, cp, av = f.result()
+            mazes[off : off + n] = m
+            cell_positions[off : off + n] = cp
+            action_vecs[off : off + n] = av
+            off += n
+        return mazes, cell_positions, action_vecs
+
+    def shutdown(self):
+        if self._executor is not None:
+            self._executor.shutdown(wait=False, cancel_futures=True)
+            self._executor = None
 
     # ------------------------------------------------------------------
     # Rendering — vectorised on GPU.
@@ -176,12 +279,14 @@ class GPUMazePipelineManager:
     ``PipelineLoader`` consumes it unchanged.
     """
 
-    def __init__(self, config: MazeDatasetConfig, chunk_size, device, dtype, gen_batch_size=None):
+    def __init__(self, config: MazeDatasetConfig, chunk_size, device, dtype,
+                 gen_batch_size=None, num_workers=0):
         self.chunk_size = chunk_size
         self.device = torch.device(device)
         self.dtype = dtype
         self.generator = GPUMazeGenerator(
-            config, device=self.device, dtype=dtype, gen_batch_size=gen_batch_size
+            config, device=self.device, dtype=dtype, gen_batch_size=gen_batch_size,
+            num_workers=num_workers,
         )
         self.gen_stream = torch.cuda.Stream(device=self.device)
 
@@ -211,6 +316,7 @@ class GPUMazePipelineManager:
     def shutdown(self):
         self.gen_stream.synchronize()
         self.current = self.next = self._pending = None
+        self.generator.shutdown()
 
 
 def init_gpu_maze_data(
@@ -221,6 +327,7 @@ def init_gpu_maze_data(
     device,
     dtype,
     gen_batch_size=None,
+    num_workers=0,
     drop_last=True,
 ):
     manager = GPUMazePipelineManager(
@@ -229,6 +336,7 @@ def init_gpu_maze_data(
         device=device,
         dtype=dtype,
         gen_batch_size=gen_batch_size,
+        num_workers=num_workers,
     )
     loader = PipelineLoader(
         manager=manager,

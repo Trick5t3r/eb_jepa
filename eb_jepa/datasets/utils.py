@@ -74,7 +74,7 @@ def create_env(env_name, config, **kwargs):
 
 
 def _init_gpu_stream(env_name, merged_cfg, config, chunk_size, device, dtype,
-                      gen_batch_size):
+                      gen_batch_size, num_gen_workers=0):
     """Dispatch to the env-specific GPU stream pipeline."""
     if env_name == "two_rooms":
         from eb_jepa.datasets.gpu_precomputed import init_gpu_precomputed_data
@@ -100,6 +100,7 @@ def _init_gpu_stream(env_name, merged_cfg, config, chunk_size, device, dtype,
             device=device,
             dtype=dtype,
             gen_batch_size=gen_batch_size,
+            num_workers=num_gen_workers,
             drop_last=True,
         )
     else:
@@ -213,9 +214,10 @@ def init_data(env_name, cfg_data=None, device=None, **kwargs):
         if backend == "gpu":
             gen_batch_size = pipeline_cfg.get("gen_batch_size")
             gen_batch_size = int(gen_batch_size) if gen_batch_size else None
+            num_gen_workers = int(pipeline_cfg.get("num_gen_workers", 0))
             loader, manager = _init_gpu_stream(
                 env_name, merged_cfg, config, chunk_size, device, dtype,
-                gen_batch_size,
+                gen_batch_size, num_gen_workers,
             )
         elif backend == "cpu":
             num_gen_workers = int(pipeline_cfg.get("num_gen_workers", 16))
