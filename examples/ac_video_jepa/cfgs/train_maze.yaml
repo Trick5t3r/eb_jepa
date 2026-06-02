@@ -28,6 +28,7 @@ training:
   dtype: bfloat16
 model:
   compile: true
+  compile_mode: reduce-overhead
   dobs: 2
   henc: 32
   hpre: 32
