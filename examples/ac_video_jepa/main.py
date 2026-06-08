@@ -158,6 +158,11 @@ def run(
             **OmegaConf.to_container(cfg.data, resolve=True),
             **(eval_cfg_dict.get("data") or {}),
         }
+        # The eval env only needs the dataset geometry (img_size/maze size); it
+        # never streams data. Drop any training data pipeline (stream/offline)
+        # inherited from cfg.data — it would require a device here and is
+        # irrelevant to building the planning env config.
+        merged_eval_data.pop("pipeline", None)
         _, _, env_config, _ = init_data(
             env_name=cfg.data.env_name, cfg_data=merged_eval_data
         )
