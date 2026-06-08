@@ -149,8 +149,17 @@ def run(
         plan_cfg["logging"] = plan_cfg_logging
         with open(cfg.eval.eval_cfg_path, "r") as f:
             eval_cfg_dict = yaml.safe_load(f)
+        # The eval env must share the model's geometry. The model is built from
+        # cfg.data (train config), so start from it and let the eval yaml's data
+        # section override — otherwise a non-default img_size/maze size (e.g.
+        # train_maze_small.yaml) wouldn't reach the env and the encoder built for
+        # the trained img_size would receive mismatched frames.
+        merged_eval_data = {
+            **OmegaConf.to_container(cfg.data, resolve=True),
+            **(eval_cfg_dict.get("data") or {}),
+        }
         _, _, env_config, _ = init_data(
-            env_name=cfg.data.env_name, cfg_data=dict(eval_cfg_dict.get("data", {}))
+            env_name=cfg.data.env_name, cfg_data=merged_eval_data
         )
         num_eval_episodes = eval_cfg_dict.get("meta", {}).get("num_eval_episodes", 10)
         n_parallel_eval = eval_cfg_dict.get("meta", {}).get("n_parallel", 1)
