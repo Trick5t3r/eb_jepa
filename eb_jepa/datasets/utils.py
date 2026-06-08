@@ -126,13 +126,68 @@ def _init_cpu_stream(env_name, merged_cfg, config, chunk_size, device, dtype,
     )
 
 
-def _init_offline(env_name, pipeline_cfg, config, loader_kwargs):
+def _init_offline(env_name, pipeline_cfg, config, loader_kwargs, device=None):
+    """Build the offline loader. Returns ``(loader, manager)``.
+
+    ``manager`` is None for the naive random-access DataLoader path, and a
+    non-None ``PipelineManager``/``DeepPrefetchManager`` when
+    ``pipeline.stream=True`` (two_rooms only) — caller then owns its
+    ``warm_up``/``shutdown`` lifecycle.
+    """
     data_dir = pipeline_cfg.get("data_dir")
     if not data_dir:
         raise ValueError(
             "init_data: pipeline.data_dir must be set when pipeline.mode='offline'"
         )
     if env_name == "two_rooms":
+        # pipeline.stream=True: read through the double-buffered VRAM stream
+        # pipeline (large sequential chunk reads, no per-sample random access).
+        # Much faster than the naive DataLoader on Lustre; traverses the dataset
+        # in stored order (no shuffle by default).
+        if bool(pipeline_cfg.get("stream", False)):
+            if device is None:
+                raise ValueError(
+                    "init_data: device must be provided when pipeline.stream=True"
+                )
+            from eb_jepa.datasets.two_rooms.offline_dataset import (
+                init_offline_stream_data,
+            )
+
+            chunk_size = int(pipeline_cfg.get("chunk_size", 9600))
+            dtype_name = str(pipeline_cfg.get("dtype", "bfloat16")).lower()
+            dtype = _DTYPE_MAP.get(dtype_name)
+            if dtype is None:
+                raise ValueError(
+                    f"Unknown pipeline.dtype={dtype_name!r}; "
+                    f"expected one of {list(_DTYPE_MAP)}"
+                )
+            shuffle = bool(pipeline_cfg.get("shuffle", False))
+            # read_workers: intra-chunk parallel disk reads (>1 fans the read of
+            # each chunk over disjoint sub-ranges — multiple outstanding I/O
+            # requests against Lustre, the fix for slow single-threaded reads).
+            # prefetch_depth: number of chunks kept reading+staging continuously
+            # in VRAM (>1 -> DeepPrefetchManager; chunks load without blocking and
+            # each GPU chunk is freed as soon as it is consumed).
+            read_workers = int(pipeline_cfg.get("read_workers", 1))
+            prefetch_depth = int(pipeline_cfg.get("prefetch_depth", 1))
+            # epoch_size = config.size (per-epoch budget, e.g. 100k = 260 steps),
+            # NOT the dataset size: one epoch matches the online baseline's budget,
+            # and successive epochs advance through the dataset (chunk_id keeps
+            # incrementing), so optim.epochs × size samples are consumed in order.
+            loader, manager = init_offline_stream_data(
+                data_dir=data_dir,
+                chunk_size=chunk_size,
+                epoch_size=config.size,
+                batch_size=config.batch_size,
+                device=device,
+                dtype=dtype,
+                drop_last=True,
+                shuffle=shuffle,
+                read_workers=read_workers,
+                prefetch_depth=prefetch_depth,
+            )
+            return loader, manager
+
         from eb_jepa.datasets.two_rooms.offline_dataset import OfflineWallDataset
 
         dset = OfflineWallDataset(data_dir)
@@ -146,7 +201,7 @@ def _init_offline(env_name, pipeline_cfg, config, loader_kwargs):
     loader = torch.utils.data.DataLoader(
         dset, batch_size=config.batch_size, shuffle=True, **loader_kwargs
     )
-    return loader
+    return loader, None
 
 
 def init_data(env_name, cfg_data=None, device=None, **kwargs):
@@ -161,6 +216,11 @@ def init_data(env_name, cfg_data=None, device=None, **kwargs):
         Caller MUST invoke ``manager.warm_up()`` before iterating and
         ``manager.shutdown()`` at the end of training.
       - ``offline``: read pre-generated memmaps from disk. Only ``two_rooms``.
+
+    For ``two_rooms`` offline, ``pipeline.stream=True`` reads the pre-generated
+    dataset through the double-buffered VRAM stream pipeline (large sequential
+    chunk reads) instead of a per-sample random-access DataLoader — far faster
+    on Lustre — and returns a non-None manager (call ``warm_up``/``shutdown``).
 
     Supported envs: ``two_rooms``, ``maze``.
 
@@ -238,8 +298,10 @@ def init_data(env_name, cfg_data=None, device=None, **kwargs):
 
     # ---- offline mode ----
     if mode == "offline":
-        loader = _init_offline(env_name, pipeline_cfg, config, loader_kwargs)
-        return loader, val_loader, config, None
+        loader, manager = _init_offline(
+            env_name, pipeline_cfg, config, loader_kwargs, device=device
+        )
+        return loader, val_loader, config, manager
 
     # ---- online mode (default) ----
     if mode != "online":
