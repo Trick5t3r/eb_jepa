@@ -27,7 +27,7 @@ from eb_jepa.datasets.maze.maze_dataset import (
     render_dot,
     render_wall_mask,
 )
-from eb_jepa.datasets.maze.maze_solver import DIRECTIONS
+from eb_jepa.datasets.maze.maze_solver import DIRECTIONS, solve_a_star
 from eb_jepa.datasets.maze.normalizer import MazeNormalizer
 
 InfoType = Dict[str, Any]
@@ -184,15 +184,43 @@ class MazeEnv(gym.Env):
             info_.append(i)
         return obs_, rew_, done_, trunc_, info_
 
+    def _pixel_to_cell(self, pixel):
+        """Inverse of ``cell_to_pixel``: pixel-space position → (row, col) cell."""
+        offset = (self.cell_size - 1) / 2.0
+        cell = np.rint((np.asarray(pixel, dtype=np.float32) - offset) / self.cell_size)
+        cell = np.clip(cell, [0, 0], [self.maze_height - 1, self.maze_width - 1])
+        return cell.astype(np.int32)
+
     def eval_state(self, goal_dot_position, curr_dot_position, succes_treshold=None):
-        """Success when agent is at the goal cell (pixel-space distance < cell_size)."""
+        """Geodesic (A*) shortest-path distance through the maze.
+
+        Straight-line (Euclidean) distance is misleading in a maze: two points
+        can be a few pixels apart yet separated by walls, so it credits the
+        planner for being *near* the goal even when no short route exists. We map
+        both positions to grid cells and run A* on the actual maze layout; the
+        path length × ``cell_size`` is the true distance an agent must travel.
+        Success = the agent is at the goal cell (geodesic distance 0).
+        """
         if succes_treshold is None:
             succes_treshold = self.cell_size + 0.5
         if isinstance(goal_dot_position, torch.Tensor):
             goal_dot_position = goal_dot_position.detach().cpu().numpy()
         if isinstance(curr_dot_position, torch.Tensor):
             curr_dot_position = curr_dot_position.detach().cpu().numpy()
-        state_dist = float(np.linalg.norm(goal_dot_position - curr_dot_position))
+
+        goal_cell = self._pixel_to_cell(goal_dot_position)
+        curr_cell = self._pixel_to_cell(curr_dot_position)
+        grid = self.maze_grid.detach().cpu().numpy().astype(np.uint8)
+
+        solved = solve_a_star(grid, tuple(curr_cell.tolist()), tuple(goal_cell.tolist()))
+        if solved is None:
+            # No A* route (e.g. the planner's position rounds onto a wall cell);
+            # fall back to Euclidean so the metric stays finite, never a success.
+            euclid = float(np.linalg.norm(goal_dot_position - curr_dot_position))
+            return {"success": False, "state_dist": euclid}
+
+        path, _ = solved
+        state_dist = float((len(path) - 1) * self.cell_size)
         return {
             "success": state_dist < succes_treshold,
             "state_dist": state_dist,

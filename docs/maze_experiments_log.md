@@ -23,41 +23,38 @@ Wiring : `utils._init_gpu_stream` lit `pipeline.num_gen_workers` →
 
 ---
 
-## 2. Perf du pas d'entraînement — NON RÉSOLU
+## 2. Perf du pas d'entraînement — RÉSOLU (le goulot était la génération)
 
-Maze tourne à **~1.20 s/it** vs **0.136 s/it** pour two_rooms, à **modèle et
-forme d'entrée identiques** (`(384, 2, 17, ~63²)`, impala, mêmes hyperparamètres).
+Le run de réf 66188 tournait à **~1.20 s/it** vs **0.136 s/it** pour two_rooms.
+On a longtemps soupçonné le modèle 32-dim (les runs post-fix 66216/66218 à
+~0.15 s/it semblaient indiquer que le modèle 128 était « 8× plus rapide » sur la
+même entrée). **Faux.** 66188 datait d'**AVANT** le fix de génération parallèle
+(`1df9eba`) ; 66216/66218 sont **après**. La différence était la **génération
+A\* séquentielle**, pas le modèle.
 
-Hypothèses **écartées par mesure / lecture** :
+### Preuve : micro-benchmark CUDA-events (job 68615, `scripts/maze_bench.py`)
 
-| Cause suspectée | Verdict |
-|---|---|
-| Génération de données (swap) | ❌ +0.28 s seulement, tous les 10 steps |
-| `compile_mode` (CUDA graphs) | ❌ `reduce-overhead` ajouté (commit `692aaca`) → **aucun gain** |
-| Loader `__iter__` | ❌ code partagé, même `index_select` |
-| Nb de frames rendues | ❌ two_rooms rend aussi la trajectoire complète |
-| `gen_batch_size` | ❌ `None` des deux côtés |
-| Partage GPU (co-tenants) | ❌ GPU dédié (4 GB200 / nœud) |
+Step réel (fwd+bwd compilé `reduce-overhead`, bf16, B=384) sur **données
+synthétiques** (isole le compute du modèle, sans génération) :
 
-Le fait que `reduce-overhead` n'apporte rien prouve que le step **n'est pas
-launch-bound**. **Conclusion : non tranchable en lisant le code** — nécessite un
-micro-benchmark CUDA-events (data-gen vs forward vs backward).
+| Condition | ms/step | fwd / bwd |
+|---|---|---|
+| **A** dim32, img63 (le « lent ») | **100.1** | 42.7 / 57.4 |
+| B dim128, img63 | 122.4 | 45.5 / 76.6 |
+| C dim32, img33 | 94.7 | 42.0 / 52.4 |
+| D dim32, img63 + `cudnn.benchmark` | 99.7 | 42.2 / 57.3 |
 
-### Nouvel indice (runs 66216 / 66218, 2026-06-02 ~23h25)
+**Verdict :**
+- Le compute du modèle « lent » (dim32, img63) = **100 ms**, identique à tout le
+  reste. Le modèle 128 est même **légèrement plus lent** (122 ms), comme attendu.
+  → l'hypothèse « 32-dim pathologiquement lent / kernel cuDNN dégénéré » est
+  **réfutée**.
+- `cudnn.benchmark` ne change rien (99.7 vs 100.1) → pas de mauvais algo de conv.
+- Les runs post-fix à ~0.15 s/it = 100 ms compute + ~50 ms data/probe. Cohérent.
 
-Surprise : les deux nouveaux runs tournent à **~0.15 s/it**, PAS 1.2 s/it.
-
-| Run | Géométrie | Modèle | Vitesse | Epoch 0 |
-|-----|-----------|--------|---------|---------|
-| 66188 (réf) | 21×21 (img 63) | **32** | ~1.2 s/it | ~330 s |
-| 66218 | 21×21 (img 63) | **128** | ~0.158 s/it (6.31 it/s) | 41 s |
-| 66216 | 11×11 (img 33) | 32 | ~0.150 s/it (6.66 it/s) | 39 s |
-
-66218 a la **même entrée** que 66188 mais un modèle **plus gros**, et il est
-**~8× plus rapide**. Donc le modèle plus large est plus rapide que le petit sur
-la même entrée → forte piste : le modèle minuscule 32-dim ne capturait pas
-correctement en CUDA graph / était dominé par l'overhead (kernels trop petits
-pour saturer le GB200), contrairement au 128. À confirmer par micro-benchmark.
+**Il ne reste aucun goulot perf** : le maze tourne au régime attendu (~0.15 s/it)
+depuis le fix de génération `1df9eba`. (Aux écartées par mesure/lecture déjà :
+`compile_mode`, loader `__iter__`, nb de frames, `gen_batch_size`, partage GPU.)
 
 ---
 
