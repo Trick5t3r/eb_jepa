@@ -95,30 +95,82 @@ Notes :
 
 ---
 
-## 5. Expériences en cours (lancées 2026-06-02)
+## 5. Expériences capacité-vs-algo (lancées 2026-06-02) — RÉSULTATS
 
-Objectif : **localiser** (capacité vs algo) en parallèle.
+| Job | Config | Résultat eval |
+|-----|--------|---------------|
+| 66216 → 66217 | small 11×11, modèle 32 | eval **crashait** (mismatch géométrie, voir §7) ; re-évalué 68617 → **0 %** |
+| 66218 → 66219 | big 21×21, modèle 128 | **0 %**, `mean_state_dist` 54.2 (euclidien) |
 
-| Job | Config | Idée |
-|-----|--------|------|
-| 66216 train → 66217 eval | `train_maze_small.yaml` — **11×11** (img 33), modèle **32** | Si un petit labyrinthe se résout, le 0 % vient de la capacité/échelle, pas de l'algo |
-| 66218 train → 66219 eval | `train_maze_big.yaml` — 21×21, modèle **128** | Si `probe` chute et l'eval réussit → la capacité était le facteur limitant |
-
-- Evals déclenchées par `--dependency=afterok:<train>`.
-- `EXP_FOLDER` **fixe** (sans timestamp) pour coupler train/eval :
-  `.../maze/exp_small_sanity/impala_seed1` et `.../maze/exp_big128/impala_seed1`.
-- Configs : `examples/ac_video_jepa/cfgs/{train_maze_small,train_maze_big,eval_maze_small,eval_maze_bounded}.yaml`.
-- sbatch : `scripts/{train,eval}_maze_{small,big}.sbatch`.
-
-**Signal le moins cher** : le `probe` loss pendant le training du modèle 128-dim.
-S'il chute vers ~0.2 → capacité. S'il reste haut → algo de planning.
+**Verdict : même le petit labyrinthe (11×11) avec petit modèle échoue (0 %).** Ça
+pointe vers l'**algorithme de planning** plus que vers la capacité du modèle :
+agrandir (128) ou rétrécir le maze ne suffit pas. Re-eval 2026-06-08 avec la
+métrique A\* (§6) : small `mean_state_dist` géodésique **72 px** (l'agent part
+à 105, descend à 72, puis se bloque → progrès partiel, jamais le but).
 
 ---
 
-## 6. Prochaines étapes
+## 6. Eval : distance géodésique A\* (2026-06-08)
 
-1. Vérifier le démarrage de 66216/66218 (pas de crash sur géométrie 11×11 / modèle 128).
-2. Comparer `probe` + succès eval des deux expériences → conclure capacité vs algo.
-3. (séparé) Micro-benchmark du 1.20 s/it si on veut la vraie cause perf.
-4. Selon le verdict : agrandir encore le modèle, ou changer l'objectif de planning
-   (sous-buts, replanning court, objectif non-greedy).
+`MazeEnv.eval_state` utilisait la distance **euclidienne** `‖goal − curr‖`,
+trompeuse en labyrinthe : deux points peuvent être proches à vol d'oiseau mais
+séparés par des murs → la métrique créditait le planner d'être « proche » sans
+route courte. Remplacée par la **distance géodésique A\*** : positions →
+cellules → `solve_a_star` → `(len(path)-1) × cell_size`. Succès = agent sur la
+case but. Fallback euclidien si une position arrondit sur un mur. Commit dans
+`eb_jepa/datasets/maze/env.py`. Validée en live (la distance suit l'agent, pas
+de crash) sur les checkpoints existants.
+
+Fix lié (`main.py`) : l'eval construit la config d'env en mergeant `cfg.data`
+(géométrie du modèle) avec la section `data` du yaml d'eval — sinon une
+géométrie non-défaut (11×11) n'atteignait pas l'env → encodeur mal dimensionné
+(crash `mat1/mat2`). On **retire le bloc `pipeline`** de ce merge (l'env d'eval
+ne stream pas ; sinon `device must be provided when pipeline.mode='stream'`).
+
+---
+
+## 7. Exp C — entraînement long-horizon (2026-06-09, EN COURS)
+
+**Insight clé.** Le planner déroule le world-model sur `plan_length=90`, mais le
+modèle n'était entraîné qu'à `nsteps=8`. Au-delà de ~8 pas ses prédictions
+divergent → MPPI optimise contre un modèle faux → l'agent se bloque. C'est la
+pièce la plus probable du 0 % (cohérent avec « progrès partiel puis blocage »).
+
+**Micro-bench CUDA (`scripts/maze_bench.py`, jobs 68615/68620)** — coût/step réel
+(fwd+bwd compilé, B=384, GB200) :
+
+| Config | ms/step |
+|---|---|
+| REF d32 T17 n8 (actuel) | 99.6 |
+| d128 T17 n8 (modèle seul) | 123.0 |
+| d128 T49 **n8** (frames seules) | 320.5 |
+| **PROP d128 T49 n32** (Exp C) | **358.8** |
+
+→ Les **`nsteps` sont quasi gratuits** (8→32 : +38 ms, +12 %) ; le coût vient du
+`sample_length` (frames encodées). La crainte « 32 pas latents = lent » est
+infondée. Exp C ≈ 359 ms/step (~1.7 min/epoch hors light-evals).
+
+**Config `train_maze_long.yaml` (`exp_long_h32`, job 68624)** : 21×21, modèle
+128, `nsteps=32`, `sample_length=49`, `min_path_length=50`, GPU-stream + 32
+workers A\*, compile `reduce-overhead`, bf16. Apprend bien (`pred` 1.6 → 0.30).
+
+**Eval finale `afterok` (job 68627)** : `eval_maze_long.sbatch`, métrique A\*,
+`planning_mppi_h32.yaml` (`plan_length=32` **aligné** sur l'horizon entraîné).
+
+> ⚠️ **Tension non tranchée** : les mazes d'eval ont un chemin ≥ 50 mais
+> `plan_length=32`. L'horizon glissant (`num_act_stepped=1`) peut chaîner > 50,
+> mais un objectif greedy + horizon court risque de rester coincé sur les détours
+> > 32 pas. Options en attente : garder 32, monter à ~48 (au-delà de la fiabilité
+> du modèle), ou évaluer aussi sur mazes plus courts (`min_path ~24`). Décision
+> reportée jusqu'aux chiffres de 68627.
+
+---
+
+## 8. Prochaines étapes
+
+1. Lire les chiffres de 68627 (success rate + distance géodésique A\*) → l'horizon
+   long fait-il monter le succès / descendre la distance vers 0 ?
+2. Trancher la tension horizon-vs-chemin (§7) selon le résultat.
+3. Si encore bloqué : objectif de planning non-greedy / **sous-buts** (waypoints,
+   éventuellement guidés par A\* sur le wall-mask), au lieu de la distance-au-but.
+4. Éventuellement horizon encore plus long (nsteps→48) si le compute le permet.
