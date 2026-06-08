@@ -44,6 +44,12 @@ def init_data(env_name, cfg_data=None, device=None, **kwargs):
       - "offline": read pre-generated memmaps from disk.
         Pre-generate once with eb_jepa/datasets/two_rooms/gpu_generator.py, then
         point cfg_data["pipeline"]["data_dir"] at the output directory.
+        cfg_data["pipeline"]["stream"]=True reads the dataset through the
+        double-buffered VRAM stream pipeline (large sequential chunk reads)
+        instead of a per-sample random-access DataLoader — far faster on Lustre.
+        cfg_data["pipeline"]["shuffle"] (default False) picks sequential vs
+        block-shuffle traversal. Requires device; caller must call
+        manager.warm_up() and manager.shutdown() (non-None manager).
 
     Args:
         env_name: Name of the environment (currently only "two_rooms" is supported).
@@ -140,6 +146,55 @@ def init_data(env_name, cfg_data=None, device=None, **kwargs):
             raise ValueError(
                 "init_data: pipeline.data_dir must be set when pipeline.mode='offline'"
             )
+
+        # pipeline.stream=True: read the pre-generated dataset through the
+        # double-buffered VRAM stream pipeline (sequential chunk reads, no
+        # per-sample random access). Much faster than the naive DataLoader on
+        # Lustre. Iterates the dataset in stored order (no shuffle).
+        if bool(pipeline_cfg.get("stream", False)):
+            if device is None:
+                raise ValueError(
+                    "init_data: device must be provided when pipeline.stream=True"
+                )
+            from eb_jepa.datasets.two_rooms.offline_dataset import (
+                init_offline_stream_data,
+            )
+
+            chunk_size = int(pipeline_cfg.get("chunk_size", 9600))
+            dtype_name = str(pipeline_cfg.get("dtype", "bfloat16")).lower()
+            dtype = _DTYPE_MAP.get(dtype_name)
+            if dtype is None:
+                raise ValueError(
+                    f"Unknown pipeline.dtype={dtype_name!r}; "
+                    f"expected one of {list(_DTYPE_MAP)}"
+                )
+            shuffle = bool(pipeline_cfg.get("shuffle", False))
+            # read_workers: intra-chunk parallel disk reads (>1 fans the read of
+            # each chunk over disjoint sub-ranges — multiple outstanding I/O
+            # requests against Lustre, the fix for slow single-threaded reads).
+            # prefetch_depth: number of chunks kept reading+staging continuously
+            # in VRAM (>1 -> DeepPrefetchManager; chunks load without blocking and
+            # each GPU chunk is freed as soon as it is consumed).
+            read_workers = int(pipeline_cfg.get("read_workers", 1))
+            prefetch_depth = int(pipeline_cfg.get("prefetch_depth", 1))
+            # epoch_size = config.size (per-epoch budget, e.g. 100k = 260 steps),
+            # NOT the dataset size: one epoch matches the online baseline's budget,
+            # and successive epochs advance through the dataset (chunk_id keeps
+            # incrementing), so optim.epochs × size samples are consumed in order.
+            loader, manager = init_offline_stream_data(
+                data_dir=data_dir,
+                chunk_size=chunk_size,
+                epoch_size=config.size,
+                batch_size=config.batch_size,
+                device=device,
+                dtype=dtype,
+                drop_last=True,
+                shuffle=shuffle,
+                read_workers=read_workers,
+                prefetch_depth=prefetch_depth,
+            )
+            return loader, val_loader, config, manager
+
         from eb_jepa.datasets.two_rooms.offline_dataset import OfflineWallDataset
 
         dset = OfflineWallDataset(data_dir)

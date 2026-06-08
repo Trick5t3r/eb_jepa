@@ -160,13 +160,26 @@ class _DatasetView:
 
 
 class PipelineManager:
-    """Owns the double-buffered VRAM chunks and orchestrates async refill."""
+    """Owns the double-buffered VRAM chunks and orchestrates async refill.
 
-    def __init__(self, env_config_dict, chunk_size, device, dtype, num_workers):
+    The chunk *source* is injected via ``generator``: any object exposing the
+    ``submit(chunk_id, chunk_size)`` / ``collect(handle, total_size)`` /
+    ``shutdown()`` contract works. Defaults to ``AsyncChunkGenerator`` (online
+    CPU generation); pass e.g. an ``OfflineChunkReader`` to stream a
+    pre-generated dataset from disk through the exact same double-buffered
+    VRAM-staging machinery.
+    """
+
+    def __init__(self, env_config_dict, chunk_size, device, dtype, num_workers,
+                 generator=None):
         self.chunk_size = chunk_size
         self.device = device
         self.dtype = dtype
-        self.generator = AsyncChunkGenerator(env_config_dict, num_workers, dtype=dtype)
+        self.generator = (
+            generator
+            if generator is not None
+            else AsyncChunkGenerator(env_config_dict, num_workers, dtype=dtype)
+        )
         self.transfer_stream = torch.cuda.Stream(device=device)
         self._transfer_executor = ThreadPoolExecutor(max_workers=1)
 
@@ -195,13 +208,13 @@ class PipelineManager:
         ~536 MB buffers never overlap. Kicks off chunk 2 generation before returning.
         """
         f0 = self.generator.submit(self._next_chunk_id, self.chunk_size)
-        chunk0 = AsyncChunkGenerator.collect(f0, total_size=self.chunk_size)
+        chunk0 = self.generator.collect(f0, total_size=self.chunk_size)
         self.current = self._to_device_blocking(chunk0)
         del chunk0
         self._next_chunk_id += 1
 
         f1 = self.generator.submit(self._next_chunk_id, self.chunk_size)
-        chunk1 = AsyncChunkGenerator.collect(f1, total_size=self.chunk_size)
+        chunk1 = self.generator.collect(f1, total_size=self.chunk_size)
         self.next = self._to_device_blocking(chunk1)
         del chunk1
         self._next_chunk_id += 1
@@ -219,7 +232,7 @@ class PipelineManager:
         self.current = self.next
         self.next = None
 
-        cpu_chunk = AsyncChunkGenerator.collect(
+        cpu_chunk = self.generator.collect(
             self._pending_gen_futures, total_size=self.chunk_size
         )
         self._pending_gen_futures = None
@@ -251,11 +264,16 @@ class PipelineLoader:
     each subsequent epoch — triggers a swap so training always sees fresh data.
     """
 
-    def __init__(self, manager, batch_size, epoch_size, drop_last=True, normalizer=None):
+    def __init__(self, manager, batch_size, epoch_size, drop_last=True, normalizer=None,
+                 shuffle=True):
         self.manager = manager
         self.batch_size = batch_size
         self.epoch_size = epoch_size
         self.drop_last = drop_last
+        # shuffle=False traverses each chunk in stored order — used for the
+        # offline-stream source, where the dataset is already i.i.d. on disk so
+        # no per-chunk reshuffle is needed (and order is deterministic).
+        self.shuffle = shuffle
         self.dataset = _DatasetView(
             normalizer=normalizer if normalizer is not None else Normalizer(),
             size=epoch_size,
@@ -276,9 +294,11 @@ class PipelineLoader:
                 self.manager.swap()
 
             current = self.manager.current
-            indices = torch.randperm(
-                current["states"].size(0), device=current["states"].device
-            )
+            n = current["states"].size(0)
+            if self.shuffle:
+                indices = torch.randperm(n, device=current["states"].device)
+            else:
+                indices = torch.arange(n, device=current["states"].device)
 
             for i in range(batches_per_chunk):
                 sel = indices[i * self.batch_size : (i + 1) * self.batch_size]
