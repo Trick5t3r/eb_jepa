@@ -129,12 +129,30 @@ ne stream pas ; sinon `device must be provided when pipeline.mode='stream'`).
 
 ---
 
-## 7. Exp C — entraînement long-horizon (2026-06-09, EN COURS)
+## 7. Exp C — entraînement long-horizon (2026-06-09) — RÉSULTAT NÉGATIF
 
-**Insight clé.** Le planner déroule le world-model sur `plan_length=90`, mais le
+**Insight de départ.** Le planner déroule le world-model sur `plan_length=90`, mais le
 modèle n'était entraîné qu'à `nsteps=8`. Au-delà de ~8 pas ses prédictions
-divergent → MPPI optimise contre un modèle faux → l'agent se bloque. C'est la
-pièce la plus probable du 0 % (cohérent avec « progrès partiel puis blocage »).
+divergent → MPPI optimise contre un modèle faux → l'agent se bloque. Hypothèse :
+entraîner long (nsteps=32) + planifier à horizon aligné (plan_length=32) débloque.
+
+**Résultat (train 68624 + eval 68627) — le 0 % PERSISTE.**
+
+| Métrique | Valeur | Lecture |
+|---|---|---|
+| `pred` final (train) | **0.0142** | dynamique très bien apprise |
+| `probe` final (train) | **0.6729** | latente encode bien la position (vs **4–11** pour dim32) |
+| eval `success_rate` | **0.0 %** | jamais le but |
+| eval `mean_state_dist` (A\*) | **235.5 px** | l'agent bouge, reste loin / coincé |
+
+→ Conséquence forte : **l'hypothèse capacité/représentation est réfutée par les
+chiffres**. `probe=0.67` prouve que le modèle 128 *sait* où est l'agent, et
+`pred=0.014` qu'il *sait* prédire la dynamique. Le long-horizon n'a pas aidé non
+plus. **Il ne reste qu'un coupable : l'objectif de planning greedy** (`repr_dist`,
+distance-au-but dans la latente) — il pousse l'agent droit vers le but → dans les
+murs → minimum local. C'est le pattern « bouge, se rapproche, se bloque » observé
+en light-eval (`state_dist` coincé ~198). Élimination cumulée : génération (§1),
+compute (§2), capacité (§5), horizon d'entraînement (§7). **Reste l'algo de planning.**
 
 **Micro-bench CUDA (`scripts/maze_bench.py`, jobs 68615/68620)** — coût/step réel
 (fwd+bwd compilé, B=384, GB200) :
@@ -156,21 +174,23 @@ workers A\*, compile `reduce-overhead`, bf16. Apprend bien (`pred` 1.6 → 0.30)
 
 **Eval finale `afterok` (job 68627)** : `eval_maze_long.sbatch`, métrique A\*,
 `planning_mppi_h32.yaml` (`plan_length=32` **aligné** sur l'horizon entraîné).
-
-> ⚠️ **Tension non tranchée** : les mazes d'eval ont un chemin ≥ 50 mais
-> `plan_length=32`. L'horizon glissant (`num_act_stepped=1`) peut chaîner > 50,
-> mais un objectif greedy + horizon court risque de rester coincé sur les détours
-> > 32 pas. Options en attente : garder 32, monter à ~48 (au-delà de la fiabilité
-> du modèle), ou évaluer aussi sur mazes plus courts (`min_path ~24`). Décision
-> reportée jusqu'aux chiffres de 68627.
+→ 0 % (table ci-dessus). La tension horizon-vs-chemin devient secondaire : même
+avec un modèle long-horizon fiable, l'objectif greedy ne sort pas du labyrinthe.
 
 ---
 
-## 8. Prochaines étapes
+## 8. Prochaines étapes — viser l'objectif de planning
 
-1. Lire les chiffres de 68627 (success rate + distance géodésique A\*) → l'horizon
-   long fait-il monter le succès / descendre la distance vers 0 ?
-2. Trancher la tension horizon-vs-chemin (§7) selon le résultat.
-3. Si encore bloqué : objectif de planning non-greedy / **sous-buts** (waypoints,
-   éventuellement guidés par A\* sur le wall-mask), au lieu de la distance-au-but.
-4. Éventuellement horizon encore plus long (nsteps→48) si le compute le permet.
+Tout pointe maintenant vers l'**objectif de planning greedy**, pas le world-model
+(génération, compute, capacité, représentation, horizon : tous éliminés). Pistes,
+par ordre de préférence :
+
+1. **Sous-buts / waypoints.** Calculer le chemin A\* sur le wall-mask, en extraire
+   des points intermédiaires (~tous les 8–16 px), et faire planifier MPPI vers le
+   **prochain waypoint** plutôt que le but final. Transforme un problème global non
+   convexe en une suite de cibles localement atteignables (où `repr_dist` greedy
+   marche déjà — c'est ce qui rendait two_rooms faisable). Cible principale.
+2. **Objectif de planning non-greedy** : pénaliser la collision/mur dans le coût
+   MPPI, ou une distance apprise (value/cost-to-go) au lieu de `repr_dist`.
+3. Vérifier que MPPI a assez de samples/horizon pour *trouver* le détour
+   (augmenter `num_samples`, élargir le bruit d'action) — moins probable vu §4.
