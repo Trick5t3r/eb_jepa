@@ -269,3 +269,28 @@ inchangé, ~4 min/run) :
 Le greedy seul (sans waypoints) erre encore → **les waypoints restent
 nécessaires** (greedy global colle aux murs même avec bon signal local).
 Les trois ingrédients sont requis. Tuning du `spacing` en cours (jobs 70149-70151).
+
+## 11. Coût de planning APPRIS (value TD-MPC) vs distance géométrique
+
+Remplacement du coût « distance-dans-le-latent » par une **value apprise**
+`V(z, z_goal)` (TD-MPC ; Hansen et al.) entraînée par **TD(0) sur les rollouts du
+world-model lui-même** (target net EMA, reward 1 à l'arrivée, régression sur
+latents réels + imaginés). Voir `examples/ac_video_jepa/README_maze_value.md`.
+
+- **`GoalValueHead`** (`state_decoder.py`), **`LearnedValueMPCObjective`**
+  (`planning.py`, `objective_type: learned_value`, coût = `1 − V`), entraînement
+  gated par `value_coeff` + `freeze_world_model` (value-only sur le world-model gelé).
+- Protocole : world-model **gelé** (= `exp_aux_pos`), value head entraînée seule
+  (loss 0.035→0.010, 6 ep). Comparaison contrôlée, mêmes 16 mazes, seul le coût change.
+
+| Régime | learned VALUE | probe_pos | repr_dist |
+|--------|--------------:|----------:|----------:|
+| greedy (but global) | 0 % | 0 % | 0 % |
+| A\* waypoints sp=1 | **12.5 %** | 6.25 % | — |
+| A\* waypoints sp=2 (tuné) | **37.5 %** | 6.25 % | — |
+
+→ **Avec waypoints, la value apprise fait ~6× le coût-distance** (37.5 vs 6.25 %),
+même world-model / mêmes mazes / mêmes réglages MPPI. Validation de l'hypothèse :
+un coût-à-apprendre corrélé au succès guide bien mieux que la distance brute.
+Greedy-global reste 0 % (but au-delà de l'horizon entraîné de la value). Limiteur
+restant = l'horizon de la value (fenêtres 16 pas) ; plot `results/maze_value/`.
