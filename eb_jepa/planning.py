@@ -30,6 +30,7 @@ objective_name_map = {
     "repr_dist": "ReprTargetDistMPCObjective",
     "repr_dist_collision": "ReprDistCollisionMPCObjective",
     "probe_pos": "ProbePositionMPCObjective",
+    "learned_value": "LearnedValueMPCObjective",
 }
 
 
@@ -231,6 +232,7 @@ def main_eval(
     n_parallel=1,
     loader=None,
     prober=None,
+    value_head=None,
 ):
     plan_cfg = OmegaConf.create(plan_cfg)
 
@@ -249,6 +251,7 @@ def main_eval(
         normalizer=env.normalizer,
         loc_prober=prober,
         env=env,
+        value_head=value_head,
     )
     logger.info(f"Agent created with planner {agent.planner.__class__.__name__}")
     logger.info(f"Planning with {plan_cfg=}")
@@ -685,6 +688,7 @@ class GCAgent:
         loc_prober: Optional[Callable] = None,
         img_prober: Optional[Callable] = None,
         env: Optional[Callable] = None,
+        value_head: Optional[Callable] = None,
     ):
         self.plan_cfg = plan_cfg
         self.env = env
@@ -692,6 +696,7 @@ class GCAgent:
         self.device = next(model.parameters()).device
         self.loc_prober = loc_prober
         self.img_prober = img_prober
+        self.value_head = value_head
         self.normalizer = normalizer
 
         # Action snapping: the maze world-model is trained ONLY on cardinal
@@ -753,6 +758,7 @@ class GCAgent:
             target_enc=self.goal_state_enc,
             target_position=self.goal_position,
             prober=self.loc_prober,
+            value_head=self.value_head,
             normalizer=self.normalizer,
             env=self.env,
             **self.plan_cfg.planner.planning_objective,
@@ -987,6 +993,71 @@ class ProbePositionMPCObjective:
         if not keepdims:
             return d[:, -1]
         return d
+
+
+class LearnedValueMPCObjective:
+    """Plan by MAXIMISING a learned goal-conditioned value, TD-MPC style.
+
+    Root issue with ``repr_dist``/``probe_pos``: both are hand-crafted geometric
+    costs (latent MSE or decoded-position distance). Latent MSE is dominated by
+    the static wall mask; even position distance is a crude as-the-crow-flies
+    proxy that ignores walls between agent and goal. Here the cost is the negative
+    of a *learned* value function ``V(z, z_goal)`` (Hansen et al., TD-MPC 2022/2024)
+    trained on the world model's own rollouts to predict the discounted
+    return-to-goal (≈ ``gamma ** steps_to_goal``). MPPI then minimises ``-V``, i.e.
+    maximises value, optimising a quantity that correlates with *task success*
+    (true steps-to-goal, walls included) rather than representation distance.
+
+    The ``value_head`` and the goal latent (``target_enc``) are supplied by
+    ``GCAgent.set_goal``. An optional small ``probe_pos`` blend (``blend_coeff``)
+    can stabilise early planning, but defaults to 0 (pure learned value).
+    """
+
+    def __init__(
+        self,
+        target_enc=None,
+        value_head=None,
+        gamma: float = 0.95,
+        sum_all_diffs: bool = True,
+        blend_coeff: float = 0.0,
+        prober=None,
+        normalizer=None,
+        target_position=None,
+        **kwargs,
+    ):
+        assert value_head is not None and target_enc is not None, (
+            "learned_value objective needs a trained value_head and a goal latent"
+        )
+        self.value_head = value_head
+        self.goal_enc = target_enc  # [1, C, 1, h, w]
+        self.gamma = float(gamma)
+        self.sum_all_diffs = sum_all_diffs
+        # optional position-distance blend for early-training stabilisation
+        self.blend_coeff = float(blend_coeff)
+        self._pos_obj = None
+        if self.blend_coeff > 0 and prober is not None and target_position is not None:
+            self._pos_obj = ProbePositionMPCObjective(
+                target_position=target_position, prober=prober,
+                normalizer=normalizer, sum_all_diffs=sum_all_diffs,
+            )
+
+    def __call__(self, encodings: torch.Tensor, keepdims: bool = False) -> torch.Tensor:
+        # encodings: [B, C, T, h, w]
+        B, C, T, H, W = encodings.shape
+        v = self.value_head(encodings.float(), self.goal_enc.float())  # [B, T] in (0,1)
+        cost = 1.0 - v  # minimise -> maximise value (cost-to-go in [0,1])
+
+        if self.sum_all_diffs:
+            disc = self.gamma ** torch.arange(T, device=encodings.device, dtype=cost.dtype)
+            out = (cost * disc.view(1, T)).sum(dim=1)  # [B]
+        elif keepdims:
+            out = cost  # [B, T]
+        else:
+            out = cost[:, -1]  # [B]
+
+        if self._pos_obj is not None:
+            out = out + self.blend_coeff * self._pos_obj(encodings, keepdims=keepdims)
+        return out
 
 
 ### Planning optimizers interface ###

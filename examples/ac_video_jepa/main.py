@@ -24,7 +24,7 @@ from eb_jepa.jepa import JEPA, JEPAProbe
 from eb_jepa.logging import get_logger
 from eb_jepa.losses import SquareLossSeq, VC_IDM_Sim_Regularizer
 from eb_jepa.schedulers import CosineWithWarmup
-from eb_jepa.state_decoder import MLPXYHead
+from eb_jepa.state_decoder import GoalValueHead, MLPXYHead
 from eb_jepa.training_utils import (
     get_default_dev_name,
     get_exp_name,
@@ -272,6 +272,21 @@ def run(
     probe_optimizer = AdamW(xy_head.parameters(), lr=1e-3, weight_decay=1e-5)
     probe_scheduler = CosineWithWarmup(probe_optimizer, total_steps, warmup_ratio=0.1)
 
+    # -- VALUE HEAD (TD-MPC style learned planning cost)
+    # A goal-conditioned scalar value V(z, z_goal) ≈ discounted return-to-goal,
+    # trained by TD on the world model's own rollouts (gated by value_coeff>0).
+    # At planning the `learned_value` objective maximises V instead of minimising
+    # raw latent/position distance. `value_target` is an EMA copy (TD target net).
+    value_coeff = cfg.model.get("value_coeff", 0.0)
+    value_gamma = cfg.model.get("value_gamma", 0.95)
+    value_head = GoalValueHead(test_output.shape[1]).to(device)
+    value_target = copy.deepcopy(value_head)
+    for p in value_target.parameters():
+        p.requires_grad_(False)
+    value_optimizer = AdamW(value_head.parameters(), lr=cfg.model.get("value_lr", 1e-3),
+                            weight_decay=1e-5)
+    value_scheduler = CosineWithWarmup(value_optimizer, total_steps, warmup_ratio=0.1)
+
     # -- LOAD CKPT
     start_epoch = 0
     ckpt_info = {}
@@ -289,6 +304,10 @@ def run(
         start_epoch = 0
         if "xy_head_state_dict" in ckpt_info:
             xy_head.load_state_dict(ckpt_info["xy_head_state_dict"])
+        if "value_head_state_dict" in ckpt_info:
+            value_head.load_state_dict(ckpt_info["value_head_state_dict"])
+            value_target.load_state_dict(ckpt_info["value_head_state_dict"])
+            logger.info("Loaded value_head from init checkpoint")
         logger.info(f"Fine-tune init from {init_path}: weights only, start_epoch=0")
     elif cfg.meta.load_model:
         checkpoint_path = folder / cfg.meta.get("load_checkpoint", "latest.pth.tar")
@@ -298,6 +317,9 @@ def run(
         start_epoch = ckpt_info.get("epoch", 0)
         if "xy_head_state_dict" in ckpt_info:
             xy_head.load_state_dict(ckpt_info["xy_head_state_dict"])
+        if "value_head_state_dict" in ckpt_info:
+            value_head.load_state_dict(ckpt_info["value_head_state_dict"])
+            value_target.load_state_dict(ckpt_info["value_head_state_dict"])
 
     # Compile
     if torch.cuda.is_available() and cfg.model.compile:
@@ -341,6 +363,7 @@ def run(
                 loader=val_loader,
                 prober=xy_prober,
                 plan_cfg=plan_cfg,
+                value_head=value_head,
             )
         )
         logger.info(
@@ -366,63 +389,114 @@ def run(
             loc = loc.to(device, non_blocking=True)
             total_loss = torch.tensor(0.0, device=device)
 
-            # Calculate JEPA loss
-            jepa_optimizer.zero_grad()
-            with autocast(device.type, enabled=use_amp, dtype=dtype):
-                _, (jepa_loss, regl, regl_unweight, regldict, pl) = jepa.unroll(
-                    x,
-                    a,
-                    nsteps=cfg.model.nsteps,
-                    unroll_mode="autoregressive",
-                    ctxt_window_time=1,
-                    compute_loss=True,
-                    return_all_steps=False,
-                )
-                total_loss += jepa_loss
-
-            # Auxiliary position loss: shape the ENCODER so its latent is
-            # linearly position-decodable (the probe head is detached and does
-            # NOT shape the encoder; planning in position space then suffers
-            # from a noisy latent→position map → planner stalls). This term
-            # flows into the encoder via jepa_optimizer. Gated by aux_pos_coeff.
-            aux_pos_coeff = cfg.model.get("aux_pos_coeff", 0.0)
-            if aux_pos_coeff:
+            # When freeze_world_model=True, the encoder/predictor/probe are kept
+            # FIXED (loaded from a proven checkpoint) and only the value head is
+            # trained — the faithful TD-MPC setup (value learned on a fixed world
+            # model's rollouts) and ~2x faster (no JEPA backward).
+            freeze_wm = cfg.model.get("freeze_world_model", False)
+            if not freeze_wm:
+                # Calculate JEPA loss
+                jepa_optimizer.zero_grad()
                 with autocast(device.type, enabled=use_amp, dtype=dtype):
-                    enc_state = jepa.encode(x[:, :, :1])  # [B, C, 1, H, W]
-                    aux_pred = xy_head(enc_state)  # NO detach → grad to encoder
-                    aux_loss = aux_pos_coeff * torch.nn.functional.mse_loss(
-                        aux_pred, loc[:, :, :1]
+                    _, (jepa_loss, regl, regl_unweight, regldict, pl) = jepa.unroll(
+                        x,
+                        a,
+                        nsteps=cfg.model.nsteps,
+                        unroll_mode="autoregressive",
+                        ctxt_window_time=1,
+                        compute_loss=True,
+                        return_all_steps=False,
                     )
-                jepa_loss = jepa_loss + aux_loss
+                    total_loss += jepa_loss
 
-            # Mixed precision backward pass
-            scaler.scale(jepa_loss).backward()
-            if cfg.optim.get("grad_clip_enc") and cfg.optim.get("grad_clip_pred"):
-                scaler.unscale_(jepa_optimizer)
-                torch.nn.utils.clip_grad_norm_(
-                    jepa.encoder.parameters(), cfg.optim.grad_clip_enc
-                )
-                torch.nn.utils.clip_grad_norm_(
-                    jepa.predictor.parameters(), cfg.optim.grad_clip_pred
-                )
-            scaler.step(jepa_optimizer)
-            scaler.update()
-            jepa_scheduler.step()
+                # Auxiliary position loss: shape the ENCODER so its latent is
+                # linearly position-decodable (the probe head is detached and does
+                # NOT shape the encoder; planning in position space then suffers
+                # from a noisy latent→position map → planner stalls). This term
+                # flows into the encoder via jepa_optimizer. Gated by aux_pos_coeff.
+                aux_pos_coeff = cfg.model.get("aux_pos_coeff", 0.0)
+                if aux_pos_coeff:
+                    with autocast(device.type, enabled=use_amp, dtype=dtype):
+                        enc_state = jepa.encode(x[:, :, :1])  # [B, C, 1, H, W]
+                        aux_pred = xy_head(enc_state)  # NO detach → grad to encoder
+                        aux_loss = aux_pos_coeff * torch.nn.functional.mse_loss(
+                            aux_pred, loc[:, :, :1]
+                        )
+                    jepa_loss = jepa_loss + aux_loss
 
-            # Calculate probe loss
-            probe_optimizer.zero_grad()
-            with autocast(device.type, enabled=use_amp, dtype=dtype):
-                xy_loss = xy_prober(
-                    observations=x[:, :, :1],
-                    targets=loc[:, :, :1],
-                )
-                xy_loss = loader.dataset.normalizer.unnormalize_mse(xy_loss)
-                total_loss += xy_loss
+                # Mixed precision backward pass
+                scaler.scale(jepa_loss).backward()
+                if cfg.optim.get("grad_clip_enc") and cfg.optim.get("grad_clip_pred"):
+                    scaler.unscale_(jepa_optimizer)
+                    torch.nn.utils.clip_grad_norm_(
+                        jepa.encoder.parameters(), cfg.optim.grad_clip_enc
+                    )
+                    torch.nn.utils.clip_grad_norm_(
+                        jepa.predictor.parameters(), cfg.optim.grad_clip_pred
+                    )
+                scaler.step(jepa_optimizer)
+                scaler.update()
+                jepa_scheduler.step()
 
-            scaler.scale(xy_loss).backward()
-            scaler.step(probe_optimizer)
-            scaler.update()
-            probe_scheduler.step()
+                # Calculate probe loss
+                probe_optimizer.zero_grad()
+                with autocast(device.type, enabled=use_amp, dtype=dtype):
+                    xy_loss = xy_prober(
+                        observations=x[:, :, :1],
+                        targets=loc[:, :, :1],
+                    )
+                    xy_loss = loader.dataset.normalizer.unnormalize_mse(xy_loss)
+                    total_loss += xy_loss
+
+                scaler.scale(xy_loss).backward()
+                scaler.step(probe_optimizer)
+                scaler.update()
+                probe_scheduler.step()
+            else:
+                # Frozen world model: placeholders so logging/epoch-summary work.
+                jepa_loss = regl = regl_unweight = pl = torch.tensor(0.0, device=device)
+                xy_loss = torch.tensor(0.0, device=device)
+                regldict = {}
+
+            # -- VALUE HEAD: TD(0) on the world model's OWN rollouts (TD-MPC style)
+            # Goal = the trajectory-window endpoint latent (hindsight goal). The
+            # value V(z_t, z_goal) is trained to predict the discounted
+            # return-to-goal: reward 1 on reaching the endpoint, else 0; bootstrap
+            # with an EMA target net. We regress BOTH the encoded real latents AND
+            # the model's autoregressive rollout latents (what the planner actually
+            # sees) onto the same TD target — so V is calibrated on imagined states.
+            value_loss = torch.tensor(0.0, device=device)
+            if value_coeff:
+                with torch.no_grad(), autocast(device.type, enabled=use_amp, dtype=dtype):
+                    z_gt = jepa.encode(x).float()  # [B, C, T, h, w]
+                    Tw = z_gt.shape[2]
+                    z_roll, _ = jepa.unroll(
+                        x[:, :, :1], a, nsteps=Tw - 1,
+                        unroll_mode="autoregressive", ctxt_window_time=1,
+                        compute_loss=False, return_all_steps=False,
+                    )  # [B, C, T, h, w] — model rollout from frame 0 with true actions
+                    z_roll = z_roll.float()
+                    g = z_gt[:, :, -1:].detach()  # goal latent
+                    v_next = value_target(z_gt[:, :, 1:].detach(), g)  # [B, T-1]
+                    done = torch.zeros_like(v_next)
+                    done[:, -1] = 1.0  # endpoint reached at the last transition
+                    td_target = done + value_gamma * (1.0 - done) * v_next  # [B, T-1]
+                value_optimizer.zero_grad()
+                with autocast(device.type, enabled=use_amp, dtype=dtype):
+                    v_real = value_head(z_gt[:, :, :-1].detach(), g)   # [B, T-1]
+                    v_roll = value_head(z_roll[:, :, :-1].detach(), g)  # [B, T-1]
+                    value_loss = value_coeff * (
+                        torch.nn.functional.mse_loss(v_real, td_target)
+                        + torch.nn.functional.mse_loss(v_roll, td_target)
+                    )
+                scaler.scale(value_loss).backward()
+                scaler.step(value_optimizer)
+                scaler.update()
+                value_scheduler.step()
+                with torch.no_grad():  # EMA update of the TD target net
+                    for pt, p in zip(value_target.parameters(), value_head.parameters()):
+                        pt.mul_(0.99).add_(p.detach(), alpha=0.01)
+                total_loss = total_loss + value_loss.detach()
 
             # Update progress bar
             pbar.set_postfix(
@@ -430,6 +504,7 @@ def run(
                     "loss": f"{total_loss.item():.4f}",
                     "reg": f"{regl.item():.4f}",
                     "pred": f"{pl.item():.4f}",
+                    "val": f"{value_loss.item():.4f}",
                 }
             )
 
@@ -441,6 +516,7 @@ def run(
                     "train/reg_loss_unweight": regl_unweight.item(),
                     "train/pred_loss": pl.item(),
                     "train/probe_loss": xy_loss.item(),
+                    "train/value_loss": value_loss.item(),
                     "global_step": global_step,
                     "epoch": epoch,
                     "itr_time": itr_time,
@@ -471,6 +547,7 @@ def run(
                     loader=val_loader,
                     prober=xy_prober,
                     plan_cfg=plan_cfg,
+                    value_head=value_head,
                 )
 
                 if cfg.logging.get("log_wandb"):
@@ -527,6 +604,7 @@ def run(
             epoch=epoch,
             step=global_step,
             xy_head_state_dict=xy_head.state_dict(),
+            value_head_state_dict=value_head.state_dict(),
             probe_optimizer_state_dict=probe_optimizer.state_dict(),
             probe_scheduler_state_dict=probe_scheduler.state_dict(),
         )
@@ -539,6 +617,7 @@ def run(
                 epoch=epoch,
                 step=global_step,
                 xy_head_state_dict=xy_head.state_dict(),
+                value_head_state_dict=value_head.state_dict(),
                 probe_optimizer_state_dict=probe_optimizer.state_dict(),
                 probe_scheduler_state_dict=probe_scheduler.state_dict(),
             )
