@@ -226,6 +226,53 @@ class MazeEnv(gym.Env):
             "state_dist": state_dist,
         }
 
+    def compute_waypoints(self, spacing_cells: int = 4):
+        """A* subgoals from the current agent cell to the goal cell.
+
+        Returns a list of pixel-space positions (tensors on ``self.device``)
+        sampled every ``spacing_cells`` cells along the true shortest path, with
+        the final goal always included. Used by the waypoint planner: MPPI aims
+        at the *next* nearby subgoal instead of the far goal, keeping the greedy
+        ``repr_dist`` objective in the local regime where it works (no walls to
+        funnel around between consecutive subgoals). Falls back to the single
+        final goal if no A* route exists.
+        """
+        grid = self.maze_grid.detach().cpu().numpy().astype(np.uint8)
+        start = tuple(int(v) for v in self.agent_cell.tolist())
+        goal = tuple(int(v) for v in self.goal_cell.tolist())
+        solved = solve_a_star(grid, start, goal)
+        if solved is None:
+            return [self.target_position.detach().clone()]
+        path, _ = solved
+        idxs = list(range(spacing_cells, len(path), spacing_cells))
+        if not idxs or idxs[-1] != len(path) - 1:
+            idxs.append(len(path) - 1)
+        waypoints = []
+        for i in idxs:
+            cell = np.asarray(path[i], dtype=np.int32)
+            pix = cell_to_pixel(cell, self.cell_size)
+            waypoints.append(
+                torch.tensor(pix, device=self.device, dtype=torch.float32)
+            )
+        return waypoints
+
+    def astar_action_from_current(self):
+        """First A* action (as a cardinal pixel vector × cell_size) from the
+        agent's CURRENT cell to the goal. Robust fallback for the planner when
+        MPC stalls: works wherever the agent is (even off the original path),
+        unlike aiming at a fixed waypoint. None if no route exists."""
+        grid = self.maze_grid.detach().cpu().numpy().astype(np.uint8)
+        start = tuple(int(v) for v in self.agent_cell.tolist())
+        goal = tuple(int(v) for v in self.goal_cell.tolist())
+        solved = solve_a_star(grid, start, goal)
+        if solved is None:
+            return None
+        _, actions = solved
+        if not actions:
+            return None
+        dr, dc = DIRECTIONS[actions[0]]
+        return np.array([dr * self.cell_size, dc * self.cell_size], dtype=np.float32)
+
     # ------------------------------------------------------------------
     # Observation helpers
     # ------------------------------------------------------------------

@@ -48,6 +48,11 @@ class MazeDatasetConfig:
     sample_length: int = 17
     min_path_length: int = 18
     max_gen_retries: int = 64
+    # Fraction of trajectory steps replaced by a "wall bump": a cardinal action
+    # INTO a wall (position unchanged). A* paths never bump walls, so without
+    # this the world-model never learns collisions → at planning it predicts
+    # movement for wall-directed actions → MPC drives into walls. 0 = off.
+    wall_bump_prob: float = 0.0
 
     # Visualisation
     agent_std: float = 1.2
@@ -156,9 +161,49 @@ def generate_path_and_actions(
 
     n_steps = config.n_steps
     n_act = n_steps - 1
+    cs = config.cell_size
 
     cell_positions = np.zeros((n_steps, 2), dtype=np.int32)
     action_vecs = np.zeros((n_act, 2), dtype=np.float32)
+
+    bump_prob = getattr(config, "wall_bump_prob", 0.0)
+    if bump_prob > 0.0 and len(path) >= 2:
+        # Interleave the A* path with "wall bumps": at each step, with prob
+        # bump_prob, emit a cardinal action INTO a wall (position unchanged) so
+        # the world-model learns collisions; otherwise advance along the path.
+        _rng = rng if rng is not None else np.random.default_rng()
+        cur = np.array(path[0], dtype=np.int32)
+        cell_positions[0] = cur
+        i = 0  # current path index (cur == path[i])
+        for t in range(n_act):
+            wall_dirs = [
+                (dr, dc)
+                for (dr, dc) in DIRECTIONS
+                if not (
+                    0 <= cur[0] + dr < H
+                    and 0 <= cur[1] + dc < W
+                    and maze[cur[0] + dr, cur[1] + dc] == 1
+                )
+            ]
+            if wall_dirs and _rng.random() < bump_prob:
+                dr, dc = wall_dirs[_rng.integers(len(wall_dirs))]
+                action_vecs[t] = np.array([dr, dc], dtype=np.float32) * cs
+                cell_positions[t + 1] = cur  # bumped a wall → stay
+            elif i < len(path) - 1:
+                nxt = np.array(path[i + 1], dtype=np.int32)
+                action_vecs[t] = (nxt - cur).astype(np.float32) * cs
+                cur = nxt
+                i += 1
+                cell_positions[t + 1] = cur
+            else:
+                cell_positions[t + 1] = cur  # reached goal → stay (zero action)
+        return (
+            maze,
+            cell_positions,
+            action_vecs,
+            np.array(start, dtype=np.int32),
+            np.array(goal, dtype=np.int32),
+        )
 
     real_len = min(len(path), n_steps)
     cell_positions[:real_len] = np.array(path[:real_len], dtype=np.int32)

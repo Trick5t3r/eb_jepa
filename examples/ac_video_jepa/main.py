@@ -275,7 +275,22 @@ def run(
     # -- LOAD CKPT
     start_epoch = 0
     ckpt_info = {}
-    if cfg.meta.load_model:
+    if cfg.meta.get("init_from"):
+        # Fine-tune: load WEIGHTS ONLY from another checkpoint (fresh optimizer,
+        # scheduler and epoch=0) so a new auxiliary objective can reshape the
+        # model at a useful LR. Saves to this run's own folder, leaving the
+        # source checkpoint untouched.
+        from pathlib import Path as _P
+        init_path = _P(cfg.meta.init_from)
+        ckpt_info = load_checkpoint(
+            init_path, jepa, optimizer=None, scheduler=None, device=device,
+            strict=False,
+        )
+        start_epoch = 0
+        if "xy_head_state_dict" in ckpt_info:
+            xy_head.load_state_dict(ckpt_info["xy_head_state_dict"])
+        logger.info(f"Fine-tune init from {init_path}: weights only, start_epoch=0")
+    elif cfg.meta.load_model:
         checkpoint_path = folder / cfg.meta.get("load_checkpoint", "latest.pth.tar")
         ckpt_info = load_checkpoint(
             checkpoint_path, jepa, jepa_optimizer, jepa_scheduler, device=device
@@ -296,17 +311,23 @@ def run(
         if not enable_eval:
             raise ValueError("eval_only_mode requires enable_plan_eval=True")
         logger.info("Running evaluation only (no training)")
-        eval_results = launch_unroll_eval(
-            jepa,
-            env_creator,
-            folder,
-            start_epoch,
-            ckpt_info.get("step", 0),
-            "_eval_only",
-            val_loader,
-            xy_prober,
-            cfg,
-        )
+        # Skip the (slow) unroll/rollout eval during planning tuning — it only
+        # produces prediction-quality GIFs and is irrelevant to the success rate.
+        if cfg.meta.get("skip_unroll_eval", False):
+            logger.info("skip_unroll_eval=True — skipping rollout eval")
+            eval_results = {}
+        else:
+            eval_results = launch_unroll_eval(
+                jepa,
+                env_creator,
+                folder,
+                start_epoch,
+                ckpt_info.get("step", 0),
+                "_eval_only",
+                val_loader,
+                xy_prober,
+                cfg,
+            )
         eval_results.update(
             launch_plan_eval(
                 jepa,
@@ -358,6 +379,21 @@ def run(
                     return_all_steps=False,
                 )
                 total_loss += jepa_loss
+
+            # Auxiliary position loss: shape the ENCODER so its latent is
+            # linearly position-decodable (the probe head is detached and does
+            # NOT shape the encoder; planning in position space then suffers
+            # from a noisy latent→position map → planner stalls). This term
+            # flows into the encoder via jepa_optimizer. Gated by aux_pos_coeff.
+            aux_pos_coeff = cfg.model.get("aux_pos_coeff", 0.0)
+            if aux_pos_coeff:
+                with autocast(device.type, enabled=use_amp, dtype=dtype):
+                    enc_state = jepa.encode(x[:, :, :1])  # [B, C, 1, H, W]
+                    aux_pred = xy_head(enc_state)  # NO detach → grad to encoder
+                    aux_loss = aux_pos_coeff * torch.nn.functional.mse_loss(
+                        aux_pred, loc[:, :, :1]
+                    )
+                jepa_loss = jepa_loss + aux_loss
 
             # Mixed precision backward pass
             scaler.scale(jepa_loss).backward()

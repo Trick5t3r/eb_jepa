@@ -194,3 +194,78 @@ par ordre de préférence :
    MPPI, ou une distance apprise (value/cost-to-go) au lieu de `repr_dist`.
 3. Vérifier que MPPI a assez de samples/horizon pour *trouver* le détour
    (augmenter `num_samples`, élargir le bruit d'action) — moins probable vu §4.
+
+---
+
+## 9. Pistes de planning (2026-06-12) — sous-buts + collision : NÉGATIF
+
+Les deux pistes de §8 sont **côté planning uniquement** : le world-model
+`exp_long_h32` (probe=0.67, pred=0.014) est inchangé, on **réévalue** le
+checkpoint avec une logique de planning différente → runs courtes (~5–8 min,
+eval-only, 12 épisodes, `n_allowed_steps=140`, `stop_on_success`). Implémentation :
+`MazeEnv.compute_waypoints` (A\* → sous-buts) + logique waypoint dans `main_eval` ;
+`ReprDistCollisionMPCObjective` (latent décodé via probe → cellule → pénalité mur).
+
+| Job | Piste | Config | `success` | `mean_dist` (A\*) |
+|-----|-------|--------|-----------|-------------------|
+| 70124 | #1 Waypoints | `spacing=4`, `plan_length=12` | **0.0 %** | 260.75 |
+| 70125 | #2 Collision | `coeff=0.3`, `plan_length=32` | **0.0 %** | 254.25 |
+| (réf §7) | greedy nu | `plan_length=32` | 0.0 % | 235.5 |
+
+**Les deux échouent, et finissent même PLUS LOIN que le greedy nu** (l'agent
+erre / part dans le mauvais sens). Pattern « bouge à peine / s'éloigne » inchangé.
+
+**Lecture #1 :** `spacing=4` laisse encore des **murs entre l'agent et le
+sous-but** → le greedy `repr_dist` retombe dans son minimum local à petite
+échelle. Le régime vraiment local (sans mur intermédiaire) n'est atteint qu'à
+`spacing=1` (sous-but = cellule adjacente).
+
+**Sweep `spacing` (jobs 70126/70127)** : `spacing=1` **0%**, `spacing=2` **0%**.
+Même avec un sous-but *adjacent* (zéro mur possible entre l'agent et la cible),
+l'agent échoue et **ne bouge quasi pas**. → Le blocage n'est **PAS** l'objectif
+global de planning. **La conclusion §7/§8 (« reste l'objectif greedy ») était
+fausse** — mauvais coupable.
+
+---
+
+## 10. Cause racine RÉELLE + premier succès (2026-06-12)
+
+Après avoir éliminé l'objectif global (sweep §9), diagnostic instrumenté
+(`_diagnose_world_model`, job 70142) : à l'épisode 0, pour chaque action
+cardinale on compare le déplacement **prédit par le world-model** (décodé via le
+probe) à ce que ferait l'env. Plus deux fixes successifs :
+
+### 10.1 Fix exécution — snap des actions (NÉCESSAIRE mais pas suffisant)
+Les actions d'entraînement maze sont **cardinales × cell_size** (`dirs*3`,
+axe-alignées) et `action_encoder = nn.Identity()` → le predictor n'a vu que
+`{(±3,0),(0,±3)}`. MPPI échantillonnait des gaussiennes continues `N(0,2)` sur
+les deux axes → **hors-distribution** → prédictions incohérentes. Fix
+`snap_actions_to_grid` (`GCAgent._snap_to_grid`) : snap des actions sur la grille
+cardinale × cell_size avant le world-model (= ce que fait `env.step`). Seul, le
+snap ne suffit pas (jobs 70136/70137 toujours 0%).
+
+### 10.2 Cause racine — `repr_dist` noyé par le masque de murs
+Le diagnostic montre que **l'encodage d'action est correct** (right → +colonne,
+down → +ligne) et le **probe est bon** (`4.48,4.90` vs vrai `4,4`). Le modèle
+prédit bien les latents (`pred=0.014`). Mais l'obs maze est **2 canaux
+(dot + masque de murs)** : le masque statique **domine le latent**, la position
+du dot y pèse peu → `repr_dist(pred, but)` est **quasi-plat** → MPPI sans signal
+→ agent figé. (two_rooms marche car structure plus simple, la position pèse plus.)
+
+**Fix — planifier en espace de POSITION via le probe** (`ProbePositionMPCObjective`,
+`objective_type: probe_pos`) : objectif = distance entre la position prédite
+(décodée par le probe) et la cible — signal positionnel direct, invariant aux murs.
+
+### 10.3 Premier succès
+Recette = **snap + `probe_pos` + waypoints A\*** (eval-only, world-model Exp C
+inchangé, ~4 min/run) :
+
+| Job | Config | `success` | `mean_dist` |
+|-----|--------|-----------|-------------|
+| 70146 | snap+probe_pos+**waypoints sp=2** | **25 %** | 122.75 |
+| 70147 | snap+probe_pos+**greedy** (no wp) | 0 % | 252.25 |
+
+→ **Premier succès non-nul (25%)**, `state_dist` descend nettement (261→75).
+Le greedy seul (sans waypoints) erre encore → **les waypoints restent
+nécessaires** (greedy global colle aux murs même avec bon signal local).
+Les trois ingrédients sont requis. Tuning du `spacing` en cours (jobs 70149-70151).
