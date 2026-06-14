@@ -1,0 +1,8 @@
+{
+  "policy": "random-persist",
+  "success_rate": 0.0,
+  "spl": 0.0,
+  "num_episodes": 32,
+  "budget": "4.0xA*+10",
+  "astar_free": true
+}

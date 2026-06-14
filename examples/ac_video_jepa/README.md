@@ -4,6 +4,8 @@
 
 This example demonstrates a Joint Embedding Predictive Architecture (JEPA) for action-conditioned world modeling in the Two Rooms environment. The model learns to predict future states based on current observations and actions, enabling planning towards goal visual embeddings.
 
+> **Two use-cases share this example.** Below: **Two Rooms** (generation, training, planning). For the **Maze** use-case — the same stack plus a learned hierarchy for **A\*-free** navigation (baseline → Level 1 → Level 2, all modular) — see **[`README_maze.md`](README_maze.md)**.
+
 | Planning Episode | Task Definition |
 |------------------|-----------------|
 | <img src="assets/top_randw_agent_steps_succ.gif" alt="Successful planning episode" width="155" /> | <img src="assets/top_randw_state.png" alt="Episode task definition" width="300" /> |

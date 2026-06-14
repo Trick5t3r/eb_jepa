@@ -28,6 +28,9 @@ planner_name_map = {
 }
 objective_name_map = {
     "repr_dist": "ReprTargetDistMPCObjective",
+    "repr_dist_collision": "ReprDistCollisionMPCObjective",
+    "probe_pos": "ProbePositionMPCObjective",
+    "learned_value": "LearnedValueMPCObjective",
 }
 
 
@@ -163,6 +166,62 @@ def main_unroll_eval(
     return results
 
 
+def _diagnose_world_model(agent, env, obs):
+    """One-shot probe: does the world-model predict the right 1-step move for
+    each cardinal action? Prints, per action, the probe-decoded predicted
+    position vs what the env would actually do (move / wall-stay). Localises the
+    0%-success failure: model (wrong/zero predicted deltas) vs optimisation."""
+    device = agent.device
+    cs = env.cell_size
+    obs_tensor = (
+        env.normalizer.normalize_state(
+            obs.detach().clone().to(dtype=torch.float32, device=device)
+        )
+        .unsqueeze(0)
+        .unsqueeze(2)
+    )  # 1 C 1 H W
+    cur_cell = env.agent_cell.copy()
+    true_pix = env.dot_position.detach().cpu().numpy()
+    with torch.no_grad():
+        enc0 = agent.model.encode(obs_tensor)
+        pos0 = (
+            agent.normalizer.unnormalize_location(
+                agent.loc_prober.apply_head(enc0.float()).permute(0, 2, 1)
+            )[0, 0]
+            .cpu()
+            .numpy()
+        )
+    logger.info(
+        f"[DIAG] agent_cell={cur_cell.tolist()} goal_cell={env.goal_cell.tolist()} "
+        f"| true_pix={true_pix} | probe(curr)={pos0}"
+    )
+    dirs = {"up": (-1, 0), "down": (1, 0), "left": (0, -1), "right": (0, 1)}
+    for name, (dr, dc) in dirs.items():
+        act = torch.tensor(
+            [[float(dr * cs)], [float(dc * cs)]], device=device
+        ).unsqueeze(0)  # [1, 2, 1]
+        with torch.no_grad():
+            pred = agent.unroll(obs_tensor, act, repeat_batch=False)  # [1,D,1,H,W]
+            pred_pos = (
+                agent.normalizer.unnormalize_location(
+                    agent.loc_prober.apply_head(pred.float()).permute(0, 2, 1)
+                )[0, -1]
+                .cpu()
+                .numpy()
+            )
+        nr, nc = int(cur_cell[0] + dr), int(cur_cell[1] + dc)
+        is_path = (
+            0 <= nr < env.maze_height
+            and 0 <= nc < env.maze_width
+            and int(env.maze_grid[nr, nc].item()) == 1
+        )
+        env_result = f"move->cell({nr},{nc})" if is_path else "WALL(stay)"
+        logger.info(
+            f"[DIAG] act {name:5s} delta_pix={(pred_pos - pos0).round(2)} "
+            f"pred_pix={pred_pos.round(2)} | env: {env_result}"
+        )
+
+
 ### Main planning eval loop ###
 def main_eval(
     plan_cfg,
@@ -173,6 +232,7 @@ def main_eval(
     n_parallel=1,
     loader=None,
     prober=None,
+    value_head=None,
 ):
     plan_cfg = OmegaConf.create(plan_cfg)
 
@@ -191,9 +251,24 @@ def main_eval(
         normalizer=env.normalizer,
         loc_prober=prober,
         env=env,
+        value_head=value_head,
     )
     logger.info(f"Agent created with planner {agent.planner.__class__.__name__}")
     logger.info(f"Planning with {plan_cfg=}")
+
+    task_spec = plan_cfg.get("task_specification", {})
+    waypoint_mode = task_spec.get("waypoint_mode", False)
+    waypoint_spacing = task_spec.get("waypoint_spacing", 4)
+    waypoint_reach = task_spec.get("waypoint_reach_cells", 1.5) * env.cell_size
+    waypoint_action_prior = task_spec.get("waypoint_action_prior", False)
+    stall_escape = task_spec.get("stall_escape", False)
+    stall_patience = int(task_spec.get("stall_patience", 3))
+    stop_on_success = task_spec.get("stop_on_success", False)
+    if waypoint_mode:
+        logger.info(
+            f"Waypoint planning ON (spacing={waypoint_spacing} cells, "
+            f"reach<{waypoint_reach:.1f}px, stop_on_success={stop_on_success})"
+        )
 
     successes = []
     distances = []
@@ -231,10 +306,23 @@ def main_eval(
             first_channel_only=False,
             clamp=False,
         )
-        agent.set_goal(
-            goal_img.detach().clone().to(dtype=torch.float32),
-            info["target_position"],
-        )
+        if waypoint_mode:
+            # Aim MPPI at the nearest A* subgoal; `goal_img` stays the TRUE goal
+            # for visualisation / success metric (unchanged below).
+            waypoints = env.compute_waypoints(waypoint_spacing)
+            wp_idx = 0
+            wp_pos = waypoints[wp_idx]
+            agent.set_goal(
+                env._render_dot_at(wp_pos).to(dtype=torch.float32), wp_pos
+            )
+        else:
+            agent.set_goal(
+                goal_img.detach().clone().to(dtype=torch.float32),
+                info["target_position"],
+            )
+
+        if ep == 0 and task_spec.get("diagnose", False):
+            _diagnose_world_model(agent, env, obs)
 
         done = False
         steps_left = env.n_allowed_steps
@@ -253,8 +341,42 @@ def main_eval(
         prev_elite_losses_mean = []
         prev_elite_losses_std = []
 
+        cur_prior = None      # A* cardinal toward current waypoint (× cell_size)
+        stall_count = 0       # consecutive steps with no GEODESIC progress
+        best_dist = float("inf")  # best (smallest) geodesic dist-to-goal so far
+        escape_uses = 0       # how many steps used the A* fallback
+
         while steps_left > 0:
             # while (not done and steps_left > 0):
+            if waypoint_mode:
+                # Advance to the next subgoal once the current one is reached,
+                # re-encoding the goal only when the target actually changes.
+                advanced = False
+                while wp_idx < len(waypoints) - 1 and (
+                    torch.norm(env.dot_position - waypoints[wp_idx]) < waypoint_reach
+                ):
+                    wp_idx += 1
+                    advanced = True
+                if advanced:
+                    wp_pos = waypoints[wp_idx]
+                    agent.set_goal(
+                        env._render_dot_at(wp_pos).to(dtype=torch.float32), wp_pos
+                    )
+                if waypoint_action_prior or stall_escape:
+                    # Cardinal direction (× cell_size) from current pos to the
+                    # current waypoint = the A* move. Used to warm-start MPPI's
+                    # mean (prior) and/or as the fallback when MPC stalls.
+                    delta = (waypoints[wp_idx] - env.dot_position)
+                    dr, dc = float(delta[0]), float(delta[1])
+                    if abs(dr) >= abs(dc):
+                        prior = [float(np.sign(dr)) * env.cell_size, 0.0]
+                    else:
+                        prior = [0.0, float(np.sign(dc)) * env.cell_size]
+                    cur_prior = np.array(prior, dtype=np.float32)
+                    if waypoint_action_prior:
+                        agent.planner.action_prior = torch.tensor(
+                            prior, device=agent.device, dtype=torch.float32
+                        )
             plan_vis_path = (
                 f"{ep_plan_vis_dir}/step{env.n_allowed_steps - steps_left}"
                 if agent.decode_each_iteration
@@ -268,21 +390,33 @@ def main_eval(
                 .unsqueeze(0)
                 .unsqueeze(2)
             )  # Unsqueeze the batch and time dimensions : C H W -> 1 C 1 H W
-            with torch.no_grad():
-                action = (
-                    agent.act(
-                        obs_tensor,
-                        steps_left=steps_left,
-                        t0=t0,
-                        plan_vis_path=plan_vis_path,
-                    )
-                    .cpu()
-                    .numpy()
-                )  # T, A
-            if agent._prev_losses is not None:
-                prev_losses.append(agent._prev_losses)
-                prev_elite_losses_mean.append(agent._prev_elite_losses_mean)
-                prev_elite_losses_std.append(agent._prev_elite_losses_std)
+            cell_before = env.agent_cell.copy()
+            astar_act = (
+                env.astar_action_from_current()
+                if (stall_escape and stall_count >= stall_patience)
+                else None
+            )
+            if astar_act is not None:
+                # MPC is stuck — recompute A* from the CURRENT cell and take its
+                # first move (robust wherever the agent wandered to).
+                action = astar_act.reshape(1, -1)  # [1, A]
+                escape_uses += 1
+            else:
+                with torch.no_grad():
+                    action = (
+                        agent.act(
+                            obs_tensor,
+                            steps_left=steps_left,
+                            t0=t0,
+                            plan_vis_path=plan_vis_path,
+                        )
+                        .cpu()
+                        .numpy()
+                    )  # T, A
+                if agent._prev_losses is not None:
+                    prev_losses.append(agent._prev_losses)
+                    prev_elite_losses_mean.append(agent._prev_elite_losses_mean)
+                    prev_elite_losses_std.append(agent._prev_elite_losses_std)
             for a in action:
                 obs, reward, done, truncated, info = env.step(a)
                 t0 = False
@@ -295,8 +429,25 @@ def main_eval(
                 )
                 success = eval_results["success"]
                 state_dist = eval_results["state_dist"]
-            pbar.set_postfix({"success": success, "state_dist": state_dist})
+            # Progress = geodesic distance-to-goal strictly decreased. Catches
+            # both stalls (no move) and oscillations (MPC moving the agent the
+            # wrong way) → A* fallback triggers on any lack of real progress.
+            if state_dist < best_dist - 1e-6:
+                best_dist = state_dist
+                stall_count = 0
+            else:
+                stall_count += 1
+            pbar.set_postfix(
+                {"success": success, "state_dist": state_dist, "esc": escape_uses}
+            )
+            if stop_on_success and (success or done):
+                break
         pbar.close()
+        if stall_escape:
+            logger.info(
+                f"ep {ep}: A* fallback used {escape_uses}× "
+                f"({'succ' if success else 'fail'}, dist={state_dist:.0f})"
+            )
 
         episode_observations.append(torch.stack(observations))
         episode_infos.append(infos)
@@ -537,6 +688,7 @@ class GCAgent:
         loc_prober: Optional[Callable] = None,
         img_prober: Optional[Callable] = None,
         env: Optional[Callable] = None,
+        value_head: Optional[Callable] = None,
     ):
         self.plan_cfg = plan_cfg
         self.env = env
@@ -544,7 +696,19 @@ class GCAgent:
         self.device = next(model.parameters()).device
         self.loc_prober = loc_prober
         self.img_prober = img_prober
+        self.value_head = value_head
         self.normalizer = normalizer
+
+        # Action snapping: the maze world-model is trained ONLY on cardinal
+        # actions of magnitude cell_size ({(±c,0),(0,±c)}); MPPI samples
+        # continuous Gaussian actions on both axes → out-of-distribution → the
+        # model predicts garbage → the agent never moves. Snapping each action
+        # to the nearest cardinal × cell_size (exactly what env.step does) feeds
+        # the model in-distribution actions. cell_size from the env.
+        self.snap_actions = bool(
+            plan_cfg.planner.get("snap_actions_to_grid", False)
+        ) if plan_cfg is not None else False
+        self.cell_size = float(getattr(env, "cell_size", 1) or 1)
 
         # Set default values if plan_cfg is None
         if plan_cfg is None:
@@ -591,7 +755,13 @@ class GCAgent:
         objective_class_name = objective_name_map[objective_name]
         objective_class = globals()[objective_class_name]
         self.objective = objective_class(
-            target_enc=self.goal_state_enc, **self.plan_cfg.planner.planning_objective
+            target_enc=self.goal_state_enc,
+            target_position=self.goal_position,
+            prober=self.loc_prober,
+            value_head=self.value_head,
+            normalizer=self.normalizer,
+            env=self.env,
+            **self.plan_cfg.planner.planning_objective,
         )
         self.planner.set_objective(self.objective)
 
@@ -608,6 +778,8 @@ class GCAgent:
         """
         batch_size = actions.shape[0]
         nsteps = actions.shape[2]
+        if self.snap_actions:
+            actions = self._snap_to_grid(actions)
         if repeat_batch:
             obs_init = obs_init.repeat(batch_size, 1, 1, 1, 1)
         predicted_states, _ = self.model.unroll(
@@ -620,6 +792,27 @@ class GCAgent:
             return_all_steps=False,
         )
         return predicted_states
+
+    def _snap_to_grid(self, actions):
+        """Snap continuous actions to the nearest cardinal × cell_size.
+
+        actions: [B, A=2, T]. Mirrors ``MazeEnv.step``'s discretisation (move
+        along the max-magnitude axis, sign-preserving, magnitude cell_size) so
+        the world-model receives the same in-distribution action it was trained
+        on. The continuous samples still drive MPPI's mean/std updates; only the
+        model-facing copy is snapped.
+        """
+        a_r = actions[:, 0, :]
+        a_c = actions[:, 1, :]
+        dom_r = a_r.abs() >= a_c.abs()
+        snapped = torch.zeros_like(actions)
+        snapped[:, 0, :] = torch.where(
+            dom_r, torch.sign(a_r), torch.zeros_like(a_r)
+        ) * self.cell_size
+        snapped[:, 1, :] = torch.where(
+            ~dom_r, torch.sign(a_c), torch.zeros_like(a_c)
+        ) * self.cell_size
+        return snapped
 
     def decode_loc_to_pixel(self, predicted_encs, wall_x=None, door_y=None):
         """
@@ -688,6 +881,183 @@ class ReprTargetDistMPCObjective:
         if self.sum_all_diffs:
             diff = diff.sum(dim=1)
         return diff
+
+
+class ReprDistCollisionMPCObjective(ReprTargetDistMPCObjective):
+    """``repr_dist`` plus a penalty for predicted states that land on walls.
+
+    The greedy ``repr_dist`` objective drives the agent straight at the goal in
+    latent space → into walls (local minima, the maze 0% blocker). Here we keep
+    that term but add a non-greedy one: decode each predicted latent to a pixel
+    position via the location prober, map it to a maze cell, and penalise
+    trajectories whose predicted states fall on *wall* cells. MPPI is then
+    steered toward action sequences that stay on the path while still heading
+    to the goal.
+
+    Needs the location ``prober`` (to decode latents → xy) and the ``env`` (for
+    the current episode's wall mask + cell geometry); both are passed by
+    ``GCAgent.set_goal``. The wall mask is captured at construction, so the
+    objective must be (re)built per episode after ``env.reset`` — which is what
+    ``set_goal`` does.
+    """
+
+    def __init__(
+        self,
+        target_enc: torch.Tensor,
+        sum_all_diffs: bool = False,
+        prober=None,
+        env=None,
+        collision_coeff: float = 0.3,
+        **kwargs,
+    ):
+        super().__init__(target_enc, sum_all_diffs=sum_all_diffs, **kwargs)
+        assert prober is not None and env is not None, (
+            "repr_dist_collision objective requires a loc prober and the env"
+        )
+        self.prober = prober
+        self.normalizer = env.normalizer
+        self.cell_size = env.cell_size
+        self.maze_h = env.maze_height
+        self.maze_w = env.maze_width
+        # 1.0 = path, 0.0 = wall ; (H_cell, W_cell) float, current episode's maze
+        self.path_grid = env.maze_grid.detach().to(torch.float32)
+        self.collision_coeff = collision_coeff
+
+    def __call__(self, encodings: torch.Tensor, keepdims: bool = False) -> torch.Tensor:
+        base = super().__call__(encodings, keepdims=keepdims)
+
+        # prober MLP is float32; cast defensively in case latents are bf16
+        xy = self.prober.apply_head(encodings.float())  # [B, 2, T] (normalized)
+        xy = xy.permute(0, 2, 1)  # [B, T, 2]
+        xy = self.normalizer.unnormalize_location(xy)  # [B, T, 2] pixel (row, col)
+
+        offset = (self.cell_size - 1) / 2.0
+        cells = torch.round((xy - offset) / self.cell_size)
+        r = cells[..., 0].clamp(0, self.maze_h - 1).long()
+        c = cells[..., 1].clamp(0, self.maze_w - 1).long()
+        grid = self.path_grid.to(encodings.device)
+        is_path = grid[r, c]  # [B, T] — 1 on path, 0 on wall
+        pen = 1.0 - is_path  # [B, T]
+
+        # Mirror the base reduction so shapes match (see ReprTargetDistMPCObjective)
+        if self.sum_all_diffs:
+            pen = pen.sum(dim=1)
+        elif not keepdims:
+            pen = pen[:, -1]
+
+        return base + self.collision_coeff * pen
+
+
+class ProbePositionMPCObjective:
+    """Plan in POSITION space via the location probe, not full-latent distance.
+
+    Root issue with ``repr_dist`` in the maze: the 2-channel obs (dot + static
+    wall mask) yields a latent dominated by the walls (constant within an
+    episode); the tiny dot's position contributes little, so latent
+    distance-to-goal is nearly flat → MPPI gets almost no signal → the agent
+    barely moves. Here we decode each predicted latent to a pixel position with
+    the probe and minimise the distance to the goal *position* directly — a
+    clean, wall-invariant signal. ``target_position`` is the goal (or current
+    waypoint) in pixel space, supplied by ``GCAgent.set_goal``.
+    """
+
+    def __init__(
+        self,
+        target_enc=None,
+        target_position=None,
+        prober=None,
+        normalizer=None,
+        sum_all_diffs: bool = True,
+        **kwargs,
+    ):
+        assert prober is not None and target_position is not None, (
+            "probe_pos objective needs a loc prober and a target_position"
+        )
+        self.prober = prober
+        self.normalizer = normalizer
+        self.sum_all_diffs = sum_all_diffs
+        tp = target_position
+        if isinstance(tp, torch.Tensor):
+            tp = tp.detach().float()
+        else:
+            tp = torch.tensor(tp, dtype=torch.float32)
+        self.target_position = tp  # (2,) pixel (row, col)
+
+    def __call__(self, encodings: torch.Tensor, keepdims: bool = False) -> torch.Tensor:
+        xy = self.prober.apply_head(encodings.float()).permute(0, 2, 1)  # [B, T, 2]
+        xy = self.normalizer.unnormalize_location(xy)  # pixel (row, col)
+        tgt = self.target_position.to(xy.device)
+        d = ((xy - tgt) ** 2).mean(dim=-1)  # [B, T]
+        if self.sum_all_diffs:
+            return d.sum(dim=1)
+        if not keepdims:
+            return d[:, -1]
+        return d
+
+
+class LearnedValueMPCObjective:
+    """Plan by MAXIMISING a learned goal-conditioned value, TD-MPC style.
+
+    Root issue with ``repr_dist``/``probe_pos``: both are hand-crafted geometric
+    costs (latent MSE or decoded-position distance). Latent MSE is dominated by
+    the static wall mask; even position distance is a crude as-the-crow-flies
+    proxy that ignores walls between agent and goal. Here the cost is the negative
+    of a *learned* value function ``V(z, z_goal)`` (Hansen et al., TD-MPC 2022/2024)
+    trained on the world model's own rollouts to predict the discounted
+    return-to-goal (≈ ``gamma ** steps_to_goal``). MPPI then minimises ``-V``, i.e.
+    maximises value, optimising a quantity that correlates with *task success*
+    (true steps-to-goal, walls included) rather than representation distance.
+
+    The ``value_head`` and the goal latent (``target_enc``) are supplied by
+    ``GCAgent.set_goal``. An optional small ``probe_pos`` blend (``blend_coeff``)
+    can stabilise early planning, but defaults to 0 (pure learned value).
+    """
+
+    def __init__(
+        self,
+        target_enc=None,
+        value_head=None,
+        gamma: float = 0.95,
+        sum_all_diffs: bool = True,
+        blend_coeff: float = 0.0,
+        prober=None,
+        normalizer=None,
+        target_position=None,
+        **kwargs,
+    ):
+        assert value_head is not None and target_enc is not None, (
+            "learned_value objective needs a trained value_head and a goal latent"
+        )
+        self.value_head = value_head
+        self.goal_enc = target_enc  # [1, C, 1, h, w]
+        self.gamma = float(gamma)
+        self.sum_all_diffs = sum_all_diffs
+        # optional position-distance blend for early-training stabilisation
+        self.blend_coeff = float(blend_coeff)
+        self._pos_obj = None
+        if self.blend_coeff > 0 and prober is not None and target_position is not None:
+            self._pos_obj = ProbePositionMPCObjective(
+                target_position=target_position, prober=prober,
+                normalizer=normalizer, sum_all_diffs=sum_all_diffs,
+            )
+
+    def __call__(self, encodings: torch.Tensor, keepdims: bool = False) -> torch.Tensor:
+        # encodings: [B, C, T, h, w]
+        B, C, T, H, W = encodings.shape
+        v = self.value_head(encodings.float(), self.goal_enc.float())  # [B, T] in (0,1)
+        cost = 1.0 - v  # minimise -> maximise value (cost-to-go in [0,1])
+
+        if self.sum_all_diffs:
+            disc = self.gamma ** torch.arange(T, device=encodings.device, dtype=cost.dtype)
+            out = (cost * disc.view(1, T)).sum(dim=1)  # [B]
+        elif keepdims:
+            out = cost  # [B, T]
+        else:
+            out = cost[:, -1]  # [B]
+
+        if self._pos_obj is not None:
+            out = out + self.blend_coeff * self._pos_obj(encodings, keepdims=keepdims)
+        return out
 
 
 ### Planning optimizers interface ###
@@ -878,6 +1248,11 @@ class MPPIPlanner(Planner):
         self.decode_each_iteration = decode_each_iteration
         self.decode_loc_to_pixel = decode_loc_to_pixel
         self._prev_mean = None
+        # Optional warm-start: a per-step action prior (e.g. the A* cardinal
+        # direction toward the current waypoint). Centers MPPI's search on the
+        # right move so probe-decoding noise can't flip the direction; the
+        # world-model + objective still refine/override via the cost. [A,] tensor.
+        self.action_prior = None
 
     @torch.no_grad()
     def plan(
@@ -898,7 +1273,12 @@ class MPPIPlanner(Planner):
         else:
             plan_length = min(self.plan_length, steps_left)
 
-        mean = torch.zeros(plan_length, self.action_dim, device=self.device)
+        if self.action_prior is not None:
+            mean = self.action_prior.to(self.device).view(1, self.action_dim).expand(
+                plan_length, self.action_dim
+            ).clone()
+        else:
+            mean = torch.zeros(plan_length, self.action_dim, device=self.device)
         std = self.max_std * torch.ones(
             plan_length, self.action_dim, device=self.device
         )

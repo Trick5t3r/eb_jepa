@@ -1,0 +1,11 @@
+{
+  "task": "A*-FREE maze navigation via hierarchy (trained WITH A*, evaluated WITHOUT A*)",
+  "eval": "16 held-out 21x21 mazes, no waypoints/prior/fallback from A* at eval",
+  "results": {
+    "greedy_no_hierarchy": 0.0,
+    "subgoal_frozen_baseline_12ep": 31.25,
+    "cotrain_shared_latent_8ep": 12.50
+  },
+  "headline": "A learned SubgoalPredictor (high-level, supervised on A* waypoints) + a low-level reacher (fine WM 1-step wall-aware + probe, blocked-skip) navigates 21x21 mazes A*-FREE at 31.25%, vs 0% for greedy without hierarchy. A* is used only as a training teacher, never at eval.",
+  "cotrain_note": "Joint fine-tuning (encoder+predictor+probe+subgoal, shared latent) HURT (31.25->12.50): the subgoal loss rose during co-training (encoder LR 2e-4 shifted the representation toward dynamics and broke the warm-started subgoal head). Honest negative; needs much lower encoder LR / staged unfreezing."
+}

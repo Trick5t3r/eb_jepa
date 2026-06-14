@@ -1,0 +1,8 @@
+{
+  "success_rate": 0.46875,
+  "spl": 0.4525505514705882,
+  "num_episodes": 32,
+  "N": 4,
+  "astar_free": true,
+  "budget": "4.0xA*+10"
+}
