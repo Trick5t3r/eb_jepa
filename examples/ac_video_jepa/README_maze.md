@@ -72,6 +72,12 @@ python -m examples.ac_video_jepa.eval_subgoal  <fine_ckpt> <out_dir>/subgoal.pth
 ```
 Result: **65.6 % success / SPL 0.62**, A\*-free. → **`README_maze_hierarchical.md`**.
 
+<p align="center">
+  <img src="../../results/maze_subgoal_best_budget/example_success.gif" width="200" alt="A*-free maze solve"><br>
+  <em>A*-free navigation: the agent reaches the goal with no A* in the decision loop
+  (learned subgoals + lookahead reacher).</em>
+</p>
+
 ## 6. Level 2 — hierarchization (co-training)
 Jointly fine-tune encoder + predictor + probe + subgoal on a **shared latent**
 (staged unfreeze, gentle encoder LR) — `main_cotrain.py`:
