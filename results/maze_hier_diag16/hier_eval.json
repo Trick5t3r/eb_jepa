@@ -1,0 +1,8 @@
+{
+  "success_rate": 0.125,
+  "num_episodes": 16,
+  "K": 4,
+  "depth": 8,
+  "n_samples": 512,
+  "astar_free": true
+}
