@@ -996,6 +996,7 @@ metrics at the recording level, not the raw 10-second-window level.
 \smallskip
 \textbf{poc:} TUAB frozen linear-probe \textbf{AUROC 0.877} (patient-disjoint split,
 near supervised SOTA); on the harder TUEV 6-class event task, $\sim$0.68 AUROC.
+\emph{Data:} \code{/lustre/work/pdl17890/udl806719/datasets/Neuro}.
 \end{trackbox}
 
 \begin{trackbox}{Track 2 --- Audio / speech representation JEPA \hfill \diffmed{}}
@@ -1011,6 +1012,9 @@ continuous and noisy; latent prediction avoids modeling phase and background noi
 \textbf{poc:} Speech Commands (35-class, chance 2.86\%): linear-probe \textbf{72.6\%}
 with log-mel spectrograms vs \textbf{33.2\%} with the raw 1D waveform; the
 augmentation (VICReg) variant beat a masked-predictive one.
+\emph{Data:} \code{/lustre/work/pdl17890/udl806719/datasets/speech\_commands\_v2} ~|~
+\href{http://download.tensorflow.org/data/speech_commands_v0.02.tar.gz}{Speech Commands v0.02}
+(Google; not on HF).
 \end{trackbox}
 
 \begin{trackbox}{Track 3 --- Wearable biosignals: ECG / IMU / PPG \hfill \diffeasy{}/\diffmed{}}
@@ -1047,6 +1051,8 @@ the 6 regimes at \textbf{0.92} accuracy (chance 0.167). But in decoded field-spa
 VRMSE the FNO/U-Net surrogates win at \emph{every} horizon $\le$10 --- a
 latent$\to$field decoder floor ($\approx$0.19 VRMSE) caps the JEPA. Answer to the
 open question: here the gain is representational, not pixel-accurate rollout.
+\emph{Data:} \code{/lustre/work/pdl17890/udl806719/datasets/the\_well/gray\_scott\_reaction\_diffusion}
+~|~ HF \href{https://huggingface.co/datasets/polymathic-ai/gray_scott_reaction_diffusion}{polymathic-ai/gray\_scott\_reaction\_diffusion}.
 \end{trackbox}
 
 \begin{trackbox}{Track 5 --- Scientific / financial multivariate time series \hfill \diffmed{}}
@@ -1070,6 +1076,8 @@ whether the recipe transfers to an unordered, irregular modality.
 \textbf{poc:} ModelNet40 (40-class, chance 2.5\%): linear-probe \textbf{80.9\%} with
 aligned views, \textbf{64.7\%} under azimuth rotations, \textbf{35.3\%} under full
 SO(3) --- accuracy drops monotonically as the demanded rotation invariance grows.
+\emph{Data:} \code{/lustre/work/pdl17890/udl806719/datasets/modelnet40/modelnet40\_ply\_hdf5\_2048}
+~|~ HF \href{https://huggingface.co/datasets/Msun/modelnet40}{Msun/modelnet40}.
 \end{trackbox}
 
 % ===========================================================================
@@ -1090,6 +1098,7 @@ the paper explicitly calls out as open.
 \textbf{poc:} on a frozen maze world model, the learned value reaches \textbf{37.5\%}
 planning success vs \textbf{6.25\%} for the distance cost ($\sim$6$\times$) under
 matched A$^*$ subgoals; greedy global planning is 0\% for both costs.
+\emph{Data:} maze generated online (no dataset path / HF).
 \end{trackbox}
 
 \begin{trackbox}{Track 8 --- Hierarchical / multi-timescale world model \hfill \diffhard{}}
@@ -1108,6 +1117,7 @@ The deepest open robotics direction in the guide.
 \textbf{A$^*$-free at 65.6\% success / SPL 0.62} (matched-budget controls: 0\% for
 greedy and 0\% for a random-walk baseline). Co-training the two levels did
 \emph{not} beat the frozen single-level world model.
+\emph{Data:} maze generated online (no dataset path / HF).
 \end{trackbox}
 
 \begin{trackbox}{Track 9 --- Stress-test the recipe under factors of variation \hfill \diffhard{}}
