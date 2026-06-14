@@ -17,6 +17,7 @@ import numpy as np
 import torch
 
 from eb_jepa.datasets.utils import create_env, init_data
+from eb_jepa.datasets.maze.maze_solver import solve_a_star
 from eb_jepa.hierarchical import CARDINALS, SubgoalPredictor, fine_kstep_target
 from eb_jepa.state_decoder import MLPXYHead
 from eb_jepa.training_utils import load_checkpoint
@@ -32,13 +33,19 @@ def main():
     lookahead = int(sys.argv[5]) if len(sys.argv) > 5 else 1  # K-step fine-WM lookahead
     revisit_pen = float(sys.argv[6]) if len(sys.argv) > 6 else 0.0
     n_gifs = int(sys.argv[7]) if len(sys.argv) > 7 else 0     # render GIFs for first n_gifs eps
+    budget_factor = float(sys.argv[8]) if len(sys.argv) > 8 else 4.0
+    budget_margin = int(sys.argv[9]) if len(sys.argv) > 9 else 10
     os.makedirs(rdir, exist_ok=True)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     cfg = OmegaConf.load(Path(fine_ckpt).parent / "config.yaml")
     _, _, env_config, _ = init_data(env_name=cfg.data.env_name,
                                     cfg_data=OmegaConf.to_container(cfg.data, resolve=True))
     cell_size = float(env_config.cell_size)
-    n_allowed = 180
+    # Per-episode step budget = factor * A* path length + margin. A* is used ONLY
+    # to size the time limit (difficulty-proportional), NEVER for the agent's
+    # decisions — navigation stays 100% A*-free. The env's hard cap is set high so
+    # our per-episode budget (not the env) is the binding limit.
+    n_allowed = 800
 
     jepa, f = build_fine(cfg, env_config, device)
     info = load_checkpoint(Path(fine_ckpt), jepa, optimizer=None, scheduler=None,
@@ -69,8 +76,9 @@ def main():
         return (int(round((float(xy[0]) - off) / cell_size)),
                 int(round((float(xy[1]) - off) / cell_size)))
 
-    print(f"[subgoal-eval] lookahead={lookahead} revisit_pen={revisit_pen}", flush=True)
-    successes = []
+    print(f"[subgoal-eval] lookahead={lookahead} revisit_pen={revisit_pen} "
+          f"budget={budget_factor}xA*+{budget_margin}", flush=True)
+    successes = []; spls = []
     OPP = {0: 1, 1: 0, 2: 3, 3: 2}
     for ep in range(num_ep):
         obs, info_e = env.reset()
@@ -78,9 +86,16 @@ def main():
         goal_xy = norm.normalize_location(
             info_e["target_position"].to(dtype=torch.float32, device=device).unsqueeze(0))[0]
         goal_img = info_e["target_obs"] if "target_obs" in info_e else None
-        frames = [obs]
+        # A* path length (difficulty) -> per-episode step budget (A* only sets the
+        # clock, never guides the agent).
+        grid = env.maze_grid.detach().cpu().numpy().astype(np.uint8)
+        solved = solve_a_star(grid, tuple(int(c) for c in env.agent_cell),
+                              tuple(int(c) for c in env.goal_cell))
+        astar_len = (len(solved[0]) - 1) if solved else 100
+        max_steps = min(int(budget_factor * astar_len + budget_margin), n_allowed)
+        frames = [obs]; n_moves = 0
         success = False; blocked = {}; visit = {}; last_rev = -1; verbose = (ep == 0)
-        for step in range(n_allowed):
+        for step in range(max_steps):
             ot = obs_tensor(obs)
             z = jepa.encode(ot)
             sg = subgoal(z, goal_xy.unsqueeze(0))[0]            # [2] normalized waypoint
@@ -109,7 +124,7 @@ def main():
                 prev = env.agent_cell.copy()
                 obs, _, done, trunc, info_e = env.step((CARDINALS[d] * cell_size).cpu().numpy())
                 if not np.array_equal(env.agent_cell, prev):
-                    moved = True; last_rev = OPP[d]; frames.append(obs); break
+                    moved = True; last_rev = OPP[d]; frames.append(obs); n_moves += 1; break
                 blocked.setdefault(cell, set()).add(d)
                 if done or trunc:
                     break
@@ -118,6 +133,9 @@ def main():
             if not moved:
                 break
         successes.append(float(success))
+        spls.append((astar_len / max(n_moves, astar_len)) if success else 0.0)
+        if verbose:
+            print(f"   ep0: A*_len={astar_len} budget={max_steps} moves={n_moves}", flush=True)
         if ep < n_gifs and len(frames) > 1:
             label = "succ" if success else "fail"
             try:
@@ -127,10 +145,12 @@ def main():
             except Exception as e:
                 print(f"   [gif ep{ep}] skipped: {e}", flush=True)
         print(f"[subgoal-eval] ep {ep}: {'SUCCESS' if success else 'fail'}", flush=True)
-    sr = float(np.mean(successes))
-    json.dump({"success_rate": sr, "num_episodes": num_ep, "N": sck["N"], "astar_free": True},
+    sr = float(np.mean(successes)); spl = float(np.mean(spls))
+    json.dump({"success_rate": sr, "spl": spl, "num_episodes": num_ep, "N": sck["N"],
+               "astar_free": True, "budget": f"{budget_factor}xA*+{budget_margin}"},
               open(os.path.join(rdir, "subgoal_eval.json"), "w"), indent=2)
-    print(f"[subgoal-eval] A*-FREE success rate = {sr*100:.2f}% over {num_ep} mazes", flush=True)
+    print(f"[subgoal-eval] A*-FREE success={sr*100:.2f}%  SPL={spl:.3f}  over {num_ep} mazes "
+          f"(budget {budget_factor}xA*+{budget_margin})", flush=True)
 
 
 if __name__ == "__main__":
