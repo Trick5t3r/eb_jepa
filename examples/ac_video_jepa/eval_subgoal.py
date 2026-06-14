@@ -20,6 +20,7 @@ from eb_jepa.datasets.utils import create_env, init_data
 from eb_jepa.hierarchical import CARDINALS, SubgoalPredictor, fine_kstep_target
 from eb_jepa.state_decoder import MLPXYHead
 from eb_jepa.training_utils import load_checkpoint
+from eb_jepa.vis_utils import save_gif
 from examples.ac_video_jepa.main_hierarchical import build_fine
 from omegaconf import OmegaConf
 
@@ -30,6 +31,7 @@ def main():
     num_ep = int(sys.argv[4]) if len(sys.argv) > 4 else 16
     lookahead = int(sys.argv[5]) if len(sys.argv) > 5 else 1  # K-step fine-WM lookahead
     revisit_pen = float(sys.argv[6]) if len(sys.argv) > 6 else 0.0
+    n_gifs = int(sys.argv[7]) if len(sys.argv) > 7 else 0     # render GIFs for first n_gifs eps
     os.makedirs(rdir, exist_ok=True)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     cfg = OmegaConf.load(Path(fine_ckpt).parent / "config.yaml")
@@ -75,6 +77,8 @@ def main():
         obs, _, _, _, info_e = env.step(np.zeros(env.action_space.shape[0]))
         goal_xy = norm.normalize_location(
             info_e["target_position"].to(dtype=torch.float32, device=device).unsqueeze(0))[0]
+        goal_img = info_e["target_obs"] if "target_obs" in info_e else None
+        frames = [obs]
         success = False; blocked = {}; visit = {}; last_rev = -1; verbose = (ep == 0)
         for step in range(n_allowed):
             ot = obs_tensor(obs)
@@ -105,7 +109,7 @@ def main():
                 prev = env.agent_cell.copy()
                 obs, _, done, trunc, info_e = env.step((CARDINALS[d] * cell_size).cpu().numpy())
                 if not np.array_equal(env.agent_cell, prev):
-                    moved = True; last_rev = OPP[d]; break
+                    moved = True; last_rev = OPP[d]; frames.append(obs); break
                 blocked.setdefault(cell, set()).add(d)
                 if done or trunc:
                     break
@@ -114,6 +118,14 @@ def main():
             if not moved:
                 break
         successes.append(float(success))
+        if ep < n_gifs and len(frames) > 1:
+            label = "succ" if success else "fail"
+            try:
+                save_gif(torch.stack([f.to(torch.float32) for f in frames]),
+                         os.path.join(rdir, f"ep{ep}_{label}.gif"), fps=8,
+                         show_frame_numbers=True, goal_frame=goal_img)
+            except Exception as e:
+                print(f"   [gif ep{ep}] skipped: {e}", flush=True)
         print(f"[subgoal-eval] ep {ep}: {'SUCCESS' if success else 'fail'}", flush=True)
     sr = float(np.mean(successes))
     json.dump({"success_rate": sr, "num_episodes": num_ep, "N": sck["N"], "astar_free": True},

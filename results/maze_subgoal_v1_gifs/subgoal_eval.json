@@ -1,0 +1,6 @@
+{
+  "success_rate": 0.65625,
+  "num_episodes": 32,
+  "N": 4,
+  "astar_free": true
+}
