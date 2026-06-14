@@ -239,7 +239,7 @@ Lock scope  & 3--4   & Write a one-sentence hypothesis and a success metric. Ske
 Baseline    & 4--8   & Get \emph{something} training without collapsing: data loader yields the right tensor shape, loss decreases, variance stays alive. \\
 Iterate     & 8--16  & One change at a time. Keep the previous run as the baseline; ablate; sweep two or three hyperparameters (\cref{sec:setup}). \\
 Evaluate    & 16--21 & Lock the model. Run downstream eval / planning / probing. Make the figures. Re-run a seed for error bars if time allows. \\
-Write up    & 21--24 & Slides, a short report, and a 3-minute demo. State the hypothesis, the result, and one thing you learned about JEPAs. \\
+Write up    & 21--24 & Push the repo (GitHub Classroom) and prepare the 10-minute presentation. State the hypothesis, the result, and one thing you learned about JEPAs. \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -473,6 +473,37 @@ Confirm the install with the test suite before you trust anything:
 loop, and the JEPA output formats; if it passes, your environment is sane.
 \end{tipbox}
 
+\subsection{On the hackathon cluster (DALIA, B200)}
+\label{sec:cluster}
+
+\textbf{Repo + venv.} Work inside the shared project space \code{/lustre/work/pdl17890/}
+--- \emph{not} your \code{\$HOME}, whose inode quota blocks \code{git}. The \code{uv}
+virtualenv is \emph{architecture-specific} (login nodes are \code{x86\_64}, compute
+nodes are \code{aarch64}), so rather than activating a single \code{.venv}, source the
+provided \file{env.sh}: it selects an arch-specific \code{UV\_PROJECT\_ENVIRONMENT},
+cache, and \code{uv} binary, plus \code{EBJEPA\_CKPTS}.
+\begin{lstlisting}[style=bash]
+cd /lustre/work/pdl17890/<you>/eb_jepa
+source env.sh    # -> venvs/eb_jepa_{x86_64|aarch64}; then `uv pip install ...` as needed
+\end{lstlisting}
+
+\textbf{SLURM.} Submit with \code{--account=pdl17890 --partition=defq --gres=gpu:1};
+exclude the frequently-OOM node with \code{--exclude=dalianvl03}. The cluster is
+offline: set \code{WANDB\_DISABLED=true} \emph{and} put \code{log\_wandb: false} in
+the config --- a CLI \code{--logging.log\_wandb=false} is parsed as the string
+\code{"false"} (truthy) and still triggers a \code{wandb} error.
+
+\textbf{Pre-downloaded datasets} (under the shared project space; group-readable):
+\begin{lstlisting}[style=bash]
+DSETS=/lustre/work/pdl17890/udl806719/datasets
+$DSETS/the_well/gray_scott_reaction_diffusion  # The Well / gray_scott (Track 4)
+$DSETS/speech_commands_v2                       # Speech Commands v2  (Track 2)
+$DSETS/modelnet40/modelnet40_ply_hdf5_2048      # ModelNet40          (Track 6)
+$DSETS/Neuro                                    # TUAB / TUEV EEG     (Track 1)
+\end{lstlisting}
+Point \code{EBJEPA\_DSETS} here (or read them directly); the maze/Two~Rooms data is
+generated on the fly, so it has no path.
+
 \subsection{Run something in two minutes}
 
 Every example is a \code{python -m} module that reads a YAML config and accepts
@@ -526,10 +557,10 @@ flags: \code{--single} (one dev job), \code{--sweep NAME} (name your run group),
 
 \begin{gotchabox}
 The launcher's default SLURM settings (partition, account, memory) at the top of
-\file{examples/launch\_sbatch.py} point at the original authors' cluster. The
-organizers will give you the correct \code{--partition}/\code{--account} (or a
-patched launcher) for the hackathon B200 nodes. Do not burn an hour debugging a
-queue rejection; ask. See \cref{sec:logistics}.
+\file{examples/launch\_sbatch.py} point at the original authors' cluster. On the
+hackathon cluster use \code{--account=pdl17890 --partition=defq} (and
+\code{--exclude=dalianvl03}), as in \cref{sec:cluster}. Do not burn an hour
+debugging a queue rejection; ask. See \cref{sec:logistics}.
 \end{gotchabox}
 
 \subsection{Where runs land, and how to compare them}
@@ -922,6 +953,15 @@ Standardize to a common $\sim$21--23 channel montage at 200\,Hz, bandpass
 $0.1$--$75$\,Hz, 60\,Hz notch, z-score per channel.
 
 \smallskip
+\textbf{Beyond TUAB.} The same TUH family gives a natural difficulty ladder for the
+\emph{same} pretrained encoder: \textbf{TUEV} (TUH EEG Events) is a harder 6-class
+event-classification task (e.g. spike/sharp-wave, GPED, PLED, eye-movement,
+artifact, background), and the broader unlabeled \textbf{TUEG} corpus is the
+pretraining pool. A strong project pretrains once and probes both TUAB
+(binary, easy) and TUEV (6-class, hard) to show where the recipe holds and where it
+strains.
+
+\smallskip
 \textbf{Two framings (start with the first).}
 \begin{itemize}[leftmargin=1.4em,itemsep=1pt,topsep=2pt]
   \item \emph{Temporal} (video-JEPA style, \cref{sec:video}): cut each channel into
@@ -1177,15 +1217,20 @@ a fast on-disk format (memmap, \code{.npy}, webdataset) once, up front.
 
 By the 24-hour mark each team submits:
 \begin{enumerate}[leftmargin=1.6em,itemsep=1pt,topsep=2pt]
-  \item \textbf{A code artifact}: a fork or branch with your changes, runnable from
-    a single documented command, plus the config(s) you used.
-  \item \textbf{A short report} (1--2 pages or a slide deck): the hypothesis, the
-    setup, the result with at least one figure or table, and one paragraph on what
-    you learned about JEPAs (especially any collapse you fought).
-  \item \textbf{A 3-minute demo} to the room: ideally a live or recorded artifact, a
-    probe-accuracy curve, a planning rollout GIF, a reconstruction-free latent
-    prediction, whatever shows your result.
+  \item \textbf{A repository}, submitted via \textbf{GitHub Classroom} (one repo per
+    group): your fork/branch with all changes, runnable from a single documented
+    command, plus the config(s) you used and a short report (hypothesis, setup,
+    result with at least one figure or table, and one paragraph on what you learned
+    about JEPAs --- especially any collapse you fought).
+  \item \textbf{A 10-minute presentation} to the room (see \cref{sec:presentation}):
+    your hypothesis, the controlled comparison, and one figure or live/recorded
+    artifact (a probe-accuracy curve, a planning rollout GIF, a latent prediction).
 \end{enumerate}
+
+\subsection{The presentation}
+\label{sec:presentation}
+
+\emph{To be done.}
 
 \subsection{How projects are judged}
 
@@ -1208,7 +1253,7 @@ JEPA understanding   & Can the team explain encoder/predictor/regularizer, why c
 Scientific rigor     & A clear hypothesis and a controlled before/after comparison; seeds and error bars where feasible. \\
 Result               & A real, interpretable outcome (positive or negative) with a figure/number, not just ``it ran.'' \\
 Creativity           & A modality or idea that genuinely stresses the recipe, or an elegant solution to a collapse/scaling problem. \\
-Clarity              & A report and demo a non-expert teammate could follow. \\
+Clarity              & A repo and presentation a non-expert teammate could follow. \\
 \bottomrule
 \end{tabular}
 \end{table}
