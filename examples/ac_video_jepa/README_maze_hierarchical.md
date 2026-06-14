@@ -56,11 +56,15 @@ sbatch scripts/maze_subgoal_eval.sbatch <fine_ckpt> <subgoal_ckpt> <out> \
 ```
 
 ## 3. Files
-- `eb_jepa/hierarchical.py` — `SubgoalPredictor` (+ a `CoarsePredictor` variant, `fine_kstep_target`)
+- `eb_jepa/hierarchical.py` — `SubgoalPredictor` (high level) + `fine_kstep_target` (low-level K-step lookahead)
+- `maze_fine_wm.py` — `build_fine()`: rebuild the frozen fine world model for inference
 - `main_subgoal.py` — train the SubgoalPredictor (supervised on A* waypoints, frozen fine WM)
 - `eval_subgoal.py` — A*-free closed-loop eval: K-step lookahead reacher, A*-proportional budget, SPL, per-episode GIF dump
 - `main_cotrain.py` — joint shared-latent fine-tuning (staged unfreeze) phase
-- `scripts/maze_subgoal.sbatch`, `maze_cotrain.sbatch`, `maze_subgoal_eval.sbatch`
+- `eval_random.py` — random-walk control baseline
+
+See `README_maze.md` for the full baseline → Level 1 → Level 2 overview and the
+modular-features table.
 
 ## 4. Results (32 held-out 21×21 mazes, **zero A\* in the decision loop**)
 
