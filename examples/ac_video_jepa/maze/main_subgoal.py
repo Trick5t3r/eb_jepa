@@ -22,7 +22,7 @@ from eb_jepa.datasets.utils import init_data
 from eb_jepa.hierarchical import SubgoalPredictor
 from eb_jepa.state_decoder import MLPXYHead
 from eb_jepa.training_utils import load_checkpoint
-from examples.ac_video_jepa.maze_fine_wm import build_fine
+from examples.ac_video_jepa.maze.maze_fine_wm import build_fine
 
 
 def main():

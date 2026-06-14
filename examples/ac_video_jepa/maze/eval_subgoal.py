@@ -22,7 +22,7 @@ from eb_jepa.hierarchical import CARDINALS, SubgoalPredictor, fine_kstep_target
 from eb_jepa.state_decoder import MLPXYHead
 from eb_jepa.training_utils import load_checkpoint
 from eb_jepa.vis_utils import save_gif
-from examples.ac_video_jepa.maze_fine_wm import build_fine
+from examples.ac_video_jepa.maze.maze_fine_wm import build_fine
 from omegaconf import OmegaConf
 
 

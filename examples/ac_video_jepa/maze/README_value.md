@@ -61,7 +61,7 @@ identical MPPI settings and the same 16 held-out 21×21 mazes
 ```bash
 sbatch scripts/train_maze_value.sbatch full          # train the value head (frozen WM)
 sbatch scripts/eval_maze_value_wp2.sbatch            # value vs probe @ tuned wp2
-python -m examples.ac_video_jepa.plots_maze_value results/maze_value
+python -m examples.ac_video_jepa.maze.plots_maze_value results/maze_value
 ```
 
 ## Results (`results/maze_value/maze_value_compare.png`)
