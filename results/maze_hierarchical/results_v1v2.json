@@ -1,0 +1,10 @@
+{
+  "eval": "32 held-out 21x21 mazes, A*-FREE (no A* at eval)",
+  "greedy_no_hierarchy": 0.0,
+  "subgoal_frozen_1step_planner_16mazes": 31.25,
+  "subgoal_frozen_lookaheadK4_planner": 56.25,
+  "cotrain_staged_lookaheadK4": 40.62,
+  "cotrain_naive_1step": 12.50,
+  "best": "frozen WM + learned subgoal + K=4 lookahead planner = 56.25%",
+  "lesson": "Co-training lowered subgoal MSE (0.047<0.059) but reduced success (56->40%): moving the encoder erodes the fragile wall-aware fine WM the low level depends on. Freeze WM + better planner wins."
+}

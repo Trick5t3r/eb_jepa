@@ -28,6 +28,8 @@ from omegaconf import OmegaConf
 def main():
     fine_ckpt, sg_ckpt, rdir = sys.argv[1], sys.argv[2], sys.argv[3]
     num_ep = int(sys.argv[4]) if len(sys.argv) > 4 else 16
+    lookahead = int(sys.argv[5]) if len(sys.argv) > 5 else 1  # K-step fine-WM lookahead
+    revisit_pen = float(sys.argv[6]) if len(sys.argv) > 6 else 0.0
     os.makedirs(rdir, exist_ok=True)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     cfg = OmegaConf.load(Path(fine_ckpt).parent / "config.yaml")
@@ -55,9 +57,17 @@ def main():
     def obs_tensor(o):
         return norm.normalize_state(o.to(dtype=torch.float32, device=device)).unsqueeze(0).unsqueeze(2)
 
+    off = (cell_size - 1) / 2.0
+
     def probe_xy(z):  # -> [2] normalized
         return xy_head(z.float()).permute(0, 2, 1)[0, 0]
 
+    def pred_cell(z):  # latent -> predicted maze cell via probe (pixel space)
+        xy = norm.unnormalize_location(xy_head(z.float()).permute(0, 2, 1)[:, 0])[0]
+        return (int(round((float(xy[0]) - off) / cell_size)),
+                int(round((float(xy[1]) - off) / cell_size)))
+
+    print(f"[subgoal-eval] lookahead={lookahead} revisit_pen={revisit_pen}", flush=True)
     successes = []
     OPP = {0: 1, 1: 0, 2: 3, 3: 2}
     for ep in range(num_ep):
@@ -65,17 +75,25 @@ def main():
         obs, _, _, _, info_e = env.step(np.zeros(env.action_space.shape[0]))
         goal_xy = norm.normalize_location(
             info_e["target_position"].to(dtype=torch.float32, device=device).unsqueeze(0))[0]
-        success = False; blocked = {}; last_rev = -1; verbose = (ep == 0)
+        success = False; blocked = {}; visit = {}; last_rev = -1; verbose = (ep == 0)
         for step in range(n_allowed):
             ot = obs_tensor(obs)
             z = jepa.encode(ot)
             sg = subgoal(z, goal_xy.unsqueeze(0))[0]            # [2] normalized waypoint
             cell = tuple(int(c) for c in env.agent_cell)
-            # score cardinals by FINE 1-step predicted distance to the waypoint
+            visit[cell] = visit.get(cell, 0) + 1
+            # score cardinals by a K-STEP fine-WM lookahead: roll the (wall-aware)
+            # fine model K steps in that direction, distance of the endpoint to the
+            # waypoint (+ revisit penalty). K-step lookahead avoids 1-step myopia
+            # and dead-ends (a blocked dir's endpoint stays put -> far from waypoint).
             dist = []
             for dd in range(4):
-                zf = fine_kstep_target(jepa, ot, torch.tensor([dd], device=device), 1, cell_size)
-                dist.append(float(torch.norm(probe_xy(zf) - sg).item()))
+                zf = fine_kstep_target(jepa, ot, torch.tensor([dd], device=device),
+                                       lookahead, cell_size)
+                d = float(torch.norm(probe_xy(zf) - sg).item())
+                if revisit_pen > 0:
+                    d += revisit_pen * visit.get(pred_cell(zf), 0)
+                dist.append(d)
             order = sorted(range(4), key=lambda dd: dist[dd])
             cand = [d for d in order if d not in blocked.get(cell, set()) and d != last_rev]
             cand += [d for d in order if d not in cand]

@@ -38,6 +38,8 @@ def main():
     fine_ckpt, sg_ckpt, out_dir = sys.argv[1], sys.argv[2], sys.argv[3]
     N = int(sys.argv[4]) if len(sys.argv) > 4 else 4
     epochs = int(sys.argv[5]) if len(sys.argv) > 5 else 8
+    freeze_epochs = int(sys.argv[6]) if len(sys.argv) > 6 else 3   # heads-only warmup
+    enc_lr = float(sys.argv[7]) if len(sys.argv) > 7 else 5e-5      # gentle encoder LR
     os.makedirs(out_dir, exist_ok=True)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     cfg = OmegaConf.load(Path(fine_ckpt).parent / "config.yaml")
@@ -76,16 +78,20 @@ def main():
     subgoal.load_state_dict(sg_state["subgoal"])  # warm-start from the frozen baseline
     print(f"[cotrain] f={f} N={N} epochs={epochs} | joint fine-tune (shared latent)", flush=True)
 
-    # low LR on the proven dynamics, higher on the heads
+    # STAGED unfreeze: encoder/predictor frozen (lr 0) for the first freeze_epochs
+    # (refine the heads on the proven latent first), then a GENTLE encoder lr so the
+    # shared latent adapts without wrecking the warm-started subgoal head.
     opt = AdamW([
-        {"params": list(enc.parameters()) + list(pred.parameters()) + list(idm.parameters()), "lr": 2e-4},
+        {"params": list(enc.parameters()) + list(pred.parameters()) + list(idm.parameters()), "lr": 0.0},
         {"params": list(xy_head.parameters()) + list(subgoal.parameters()), "lr": 1e-3},
     ], weight_decay=1e-5)
+    print(f"[cotrain] staged: {freeze_epochs} heads-only epochs, then encoder lr={enc_lr}", flush=True)
     aux_coeff = float(m.get("aux_pos_coeff", 0.5)) or 0.5
     sg_coeff = 1.0
     nsteps = int(m.nsteps)
 
     for epoch in range(epochs):
+        opt.param_groups[0]["lr"] = 0.0 if epoch < freeze_epochs else enc_lr
         jepa.train(); t0 = time.time()
         jl = sgl = al = 0.0; nb = 0
         for x, a, loc, _, _ in loader:
