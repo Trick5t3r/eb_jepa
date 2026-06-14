@@ -952,6 +952,10 @@ clearing $\sim$0.78 would be a genuinely strong hackathon result.
 set for simplicity, or use per-electrode embeddings); per-channel normalization is
 mandatory; class-aware metric because the eval split is mildly imbalanced. Report
 metrics at the recording level, not the raw 10-second-window level.
+
+\smallskip
+\textbf{poc:} TUAB frozen linear-probe \textbf{AUROC 0.877} (patient-disjoint split,
+near supervised SOTA); on the harder TUEV 6-class event task, $\sim$0.68 AUROC.
 \end{trackbox}
 
 \begin{trackbox}{Track 2 --- Audio / speech representation JEPA \hfill \diffmed{}}
@@ -962,6 +966,11 @@ frames as a temporal sequence for the video-JEPA setting. \textbf{Files:} a
 spectrogram dataset; reuse the ResNet or ViT encoder. \textbf{Metric:} linear-probe
 accuracy on the downstream classification set. \textbf{Why JEPA:} audio is
 continuous and noisy; latent prediction avoids modeling phase and background noise.
+
+\smallskip
+\textbf{poc:} Speech Commands (35-class, chance 2.86\%): linear-probe \textbf{72.6\%}
+with log-mel spectrograms vs \textbf{33.2\%} with the raw 1D waveform; the
+augmentation (VICReg) variant beat a masked-predictive one.
 \end{trackbox}
 
 \begin{trackbox}{Track 3 --- Wearable biosignals: ECG / IMU / PPG \hfill \diffeasy{}/\diffmed{}}
@@ -990,6 +999,14 @@ multi-TB sets. \textbf{Metric:} VRMSE of the decoded autoregressive rollout vs t
 FNO/U-Net baseline at several horizons. A clean JEPA-versus-surrogate comparison on
 real physics (for \emph{observational} rather than simulated fields,
 ERA5/WeatherBench is a harder variant).
+
+\smallskip
+\textbf{poc:} on \code{gray\_scott\_reaction\_diffusion}, the latent rollout beats a
+persistence baseline \textbf{4.5$\times$} at horizon 6 and frozen latents separate
+the 6 regimes at \textbf{0.92} accuracy (chance 0.167). But in decoded field-space
+VRMSE the FNO/U-Net surrogates win at \emph{every} horizon $\le$10 --- a
+latent$\to$field decoder floor ($\approx$0.19 VRMSE) caps the JEPA. Answer to the
+open question: here the gain is representational, not pixel-accurate rollout.
 \end{trackbox}
 
 \begin{trackbox}{Track 5 --- Scientific / financial multivariate time series \hfill \diffmed{}}
@@ -1008,6 +1025,11 @@ probed on shape classification. \textbf{Files:} a point-cloud dataset with geome
 augmentations; a PointNet-style encoder in \file{architectures.py}; reuse
 \code{VICRegLoss}. \textbf{Metric:} linear-probe classification accuracy. Tests
 whether the recipe transfers to an unordered, irregular modality.
+
+\smallskip
+\textbf{poc:} ModelNet40 (40-class, chance 2.5\%): linear-probe \textbf{80.9\%} with
+aligned views, \textbf{64.7\%} under azimuth rotations, \textbf{35.3\%} under full
+SO(3) --- accuracy drops monotonically as the demanded rotation invariance grows.
 \end{trackbox}
 
 % ===========================================================================
@@ -1023,6 +1045,11 @@ objective class in \file{eb\_jepa/planning.py} registered in
 \textbf{Metric:} Two Rooms success and planning compute vs the distance-cost
 baseline, especially on the hardest non-monotonic episodes. Attacks a limitation
 the paper explicitly calls out as open.
+
+\smallskip
+\textbf{poc:} on a frozen maze world model, the learned value reaches \textbf{37.5\%}
+planning success vs \textbf{6.25\%} for the distance cost ($\sim$6$\times$) under
+matched A$^*$ subgoals; greedy global planning is 0\% for both costs.
 \end{trackbox}
 
 \begin{trackbox}{Track 8 --- Hierarchical / multi-timescale world model \hfill \diffhard{}}
@@ -1035,6 +1062,12 @@ split as ``a natural starting point'' for exactly this, and no example ships it 
 \code{ac\_video\_jepa/main.py}; a coarse-level temporal-similarity term.
 \textbf{Metric:} long-horizon planning success and wall-clock vs the flat baseline.
 The deepest open robotics direction in the guide.
+
+\smallskip
+\textbf{poc:} on 21$\times$21 mazes, a two-level hierarchy solves them
+\textbf{A$^*$-free at 65.6\% success / SPL 0.62} (matched-budget controls: 0\% for
+greedy and 0\% for a random-walk baseline). Co-training the two levels did
+\emph{not} beat the frozen single-level world model.
 \end{trackbox}
 
 \begin{trackbox}{Track 9 --- Stress-test the recipe under factors of variation \hfill \diffhard{}}
