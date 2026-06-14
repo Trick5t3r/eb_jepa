@@ -63,7 +63,7 @@ sbatch scripts/maze_subgoal_eval.sbatch <fine_ckpt> <subgoal_ckpt> <out> \
 - `main_cotrain.py` — joint shared-latent fine-tuning (staged unfreeze) phase
 - `eval_random.py` — random-walk control baseline
 
-See `README_maze.md` for the full baseline → Level 1 → Level 2 overview and the
+See `README.md` for the full baseline → Level 1 → Level 2 overview and the
 modular-features table.
 
 ## 4. Results (32 held-out 21×21 mazes, **zero A\* in the decision loop**)

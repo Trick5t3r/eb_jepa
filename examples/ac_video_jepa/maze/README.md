@@ -58,7 +58,7 @@ The MPC **objective** is config-selected via `objective_name_map` (`planning.py`
 **`learned_value`** (a TD-MPC value head `V(z, z_goal)` trained by TD on the world
 model's own rollouts — `value_coeff`/`freeze_world_model` in `train_maze_value.yaml`).
 Result: with A\* waypoints the **learned value 37.5 %** beats the distance cost
-6.25 %; greedy-global is 0 % for all. → **`README_maze_value.md`**.
+6.25 %; greedy-global is 0 % for all. → **`README_value.md`**.
 
 ## 5. Level 1 — A\*-free navigation (learned subgoals)
 - **High level** `SubgoalPredictor(z, goal) → next waypoint` (`eb_jepa/hierarchical.py`),
@@ -66,14 +66,14 @@ Result: with A\* waypoints the **learned value 37.5 %** beats the distance cost
 - **Low level**: reach the waypoint with the frozen, wall-aware fine WM via a
   **K-step lookahead** reacher + execution-feedback blocked-skip (`eval_subgoal.py`).
 ```bash
-python -m examples.ac_video_jepa.main_subgoal  <fine_ckpt> <out_dir> 4 12      # N=4, 12 epochs
-python -m examples.ac_video_jepa.eval_subgoal  <fine_ckpt> <out_dir>/subgoal.pth.tar \
+python -m examples.ac_video_jepa.maze.main_subgoal  <fine_ckpt> <out_dir> 4 12      # N=4, 12 epochs
+python -m examples.ac_video_jepa.maze.eval_subgoal  <fine_ckpt> <out_dir>/subgoal.pth.tar \
        results/maze_subgoal 32 4 0.05 32 4 10   # num_ep lookahead revisit_pen n_gifs budget_factor margin
 ```
-Result: **65.6 % success / SPL 0.62**, A\*-free. → **`README_maze_hierarchical.md`**.
+Result: **65.6 % success / SPL 0.62**, A\*-free. → **`README_hierarchical.md`**.
 
 <p align="center">
-  <img src="../../results/maze_subgoal_best_budget/example_success.gif" width="200" alt="A*-free maze solve"><br>
+  <img src="../../../results/maze_subgoal_best_budget/example_success.gif" width="200" alt="A*-free maze solve"><br>
   <em>A*-free navigation: the agent reaches the goal with no A* in the decision loop
   (learned subgoals + lookahead reacher).</em>
 </p>
@@ -82,8 +82,8 @@ Result: **65.6 % success / SPL 0.62**, A\*-free. → **`README_maze_hierarchical
 Jointly fine-tune encoder + predictor + probe + subgoal on a **shared latent**
 (staged unfreeze, gentle encoder LR) — `main_cotrain.py`:
 ```bash
-python -m examples.ac_video_jepa.main_cotrain <fine_ckpt> <subgoal_ckpt> <out_dir> 4 8 2 5e-5
-python -m examples.ac_video_jepa.eval_subgoal <out_dir>/latest.pth.tar <out_dir>/subgoal.pth.tar \
+python -m examples.ac_video_jepa.maze.main_cotrain <fine_ckpt> <subgoal_ckpt> <out_dir> 4 8 2 5e-5
+python -m examples.ac_video_jepa.maze.eval_subgoal <out_dir>/latest.pth.tar <out_dir>/subgoal.pth.tar \
        results/maze_cotrain 32 4 0.05 32 4 10
 ```
 Honest result: co-training **lowers the subgoal loss but does not beat L1** (46.9 %):
@@ -111,19 +111,22 @@ eb_jepa/
   state_decoder.py               # MLPXYHead (position probe) + GoalValueHead (TD-MPC value)
   hierarchical.py                # SubgoalPredictor (high level) + fine_kstep_target (lookahead)
 examples/ac_video_jepa/
-  main.py                        # train fine WM (+ optional value head, gated)
-  maze_fine_wm.py                # build_fine(): rebuild frozen fine WM for inference
-  main_subgoal.py / eval_subgoal.py   # Level 1: A*-free subgoal nav (+ SPL, GIFs)
-  main_cotrain.py                # Level 2: co-training (shared latent)
-  eval_random.py                 # random-walk control
-  plots_maze_value.py            # baseline value-vs-distance bar chart
-  cfgs/                          # train_maze*.yaml, eval_maze*.yaml, planning_mppi_value_*.yaml
-  README_maze.md (this) · README_maze_value.md · README_maze_hierarchical.md
+  main.py / eval.py              # SHARED trainer/eval (env-selected: two_rooms | maze)
+  cfgs/                          # SHARED configs (train_maze*, eval_maze*, planning_*; planning_mppi.yaml is shared with Two Rooms)
+  maze/                          # <- this folder (everything maze-specific)
+    maze_fine_wm.py              #   build_fine(): rebuild frozen fine WM for inference
+    main_subgoal.py / eval_subgoal.py   # Level 1: A*-free subgoal nav (+ SPL, GIFs)
+    main_cotrain.py              #   Level 2: co-training (shared latent)
+    eval_random.py               #   random-walk control
+    plots_maze_value.py          #   baseline value-vs-distance bar chart
+    README.md (this) · README_value.md · README_hierarchical.md
+  two_rooms/                     # Two Rooms README + assets
+docs/maze_experiments_log.md     # full chronological experiments log
 docs/maze_experiments_log.md     # full chronological experiments log
 results/  maze_value/ · maze_subgoal_best_budget/ · maze_cotrain_best_budget/
           maze_random_baseline/ · maze_hierarchical/   # results.json + plots + GIFs
 ```
 ```bash
 # random control (same budget) — sanity floor
-python -m examples.ac_video_jepa.eval_random <fine_ckpt> results/maze_random_baseline 32 4 10
+python -m examples.ac_video_jepa.maze.eval_random <fine_ckpt> results/maze_random_baseline 32 4 10
 ```
