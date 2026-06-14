@@ -67,6 +67,7 @@ sbatch scripts/maze_subgoal_eval.sbatch <fine_ckpt> <subgoal_ckpt> <out> \
 | config | budget | success | SPL |
 |---|---|---|---|
 | greedy, no hierarchy | fixed | **0 %** | — |
+| random-persist baseline | 4·A\*+10 | **0 %** | 0.000 |
 | subgoal (frozen), planner 1-step | fixed 180 | 31.25 % | — |
 | **subgoal (frozen) + lookahead K=4** | **4·A\*+10** | **65.62 %** | **0.616** |
 | co-training (staged) + lookahead K=4 | 4·A\*+10 | 46.88 % | 0.453 |
