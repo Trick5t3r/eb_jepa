@@ -974,6 +974,21 @@ pretraining pool. A strong project pretrains once and probes both TUAB
 strains.
 
 \smallskip
+\textbf{More TUH corpora available locally (downloaded for this hackathon).} Two
+additional labeled task corpora extend the difficulty ladder for the \emph{same}
+frozen encoder, beyond TUAB/TUEV: \textbf{TUAR} (TUH EEG Artifact Corpus,
+\code{TUAR\_RAW\_DATA}) --- per-segment \emph{artifact} detection/typing (eye movement,
+muscle, chewing, shiver, electrode, instrument artifacts on the \code{01\_tcp\_ar}
+montage), a clinically useful and noise-robust probe; and \textbf{TUEP} (TUH EEG
+Epilepsy Corpus, \code{TUEP\_RAW\_DATA}) --- \emph{patient-level} epilepsy vs
+no-epilepsy classification (\code{00\_epilepsy} / \code{01\_no\_epilepsy}, multi-session
+per subject, \code{01\_tcp\_ar} and \code{02\_tcp\_le} montages), which forces
+subject-disjoint splits and tests whether the representation transfers to a coarse,
+patient-level label rather than a per-window one. Both are raw EDF (same preprocessing
+as TUAB: common montage, 200\,Hz, bandpass, per-channel z-score) and reuse the existing
+linear-probe harness.
+
+\smallskip
 \textbf{Two framings (start with the first).}
 \begin{itemize}[leftmargin=1.4em,itemsep=1pt,topsep=2pt]
   \item \emph{Temporal} (video-JEPA style, \cref{sec:video}): cut each channel into
@@ -1008,7 +1023,12 @@ metrics at the recording level, not the raw 10-second-window level.
 \smallskip
 \textbf{poc:} TUAB frozen linear-probe \textbf{AUROC 0.877} (patient-disjoint split,
 near supervised SOTA); on the harder TUEV 6-class event task, $\sim$0.68 AUROC.
-\emph{Data:} \code{/lustre/work/pdl17890/udl806719/datasets/Neuro}.
+TUAR (artifact) and TUEP (patient-level epilepsy) are downloaded and ready as further
+probes for the same encoder.
+\emph{Data:} \code{/lustre/work/pdl17890/udl806719/datasets/Neuro} ---
+\code{TUAB-TUEV/} (TUAB+TUEV) and \code{TUAB-TUEV-PREPROCESSED/}
+(\code{TUAR\_RAW\_DATA}, \code{TUEP\_RAW\_DATA}, \code{TUEV\_PREPROCESSED}) ~|~ HF
+\href{https://huggingface.co/datasets/DBClab/TUAB-TUEV-PREPROCESSED}{DBClab/TUAB-TUEV-PREPROCESSED}.
 \end{trackbox}
 
 \begin{trackbox}{Track 2 --- Audio / speech representation JEPA \hfill \diffmed{}}
