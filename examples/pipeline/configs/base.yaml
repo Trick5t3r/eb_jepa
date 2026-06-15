@@ -1,0 +1,31 @@
+# Base pipeline config. Override any key on the CLI (e.g. model.ssl=vicreg).
+# Track-specific data keys (paths, window lengths, ...) go under `data` and are
+# read by your Track; add them in your own track config.
+meta:
+  seed: 0
+  ckpt_dir: /lustre/work/pdl17890/udl806719/checkpoints/pipeline/run
+data:
+  batch_size: 128
+  num_workers: 8
+  # TODO (per track): data_root / csv / split bounds / window length, etc.
+model:
+  ssl: predictive        # predictive (latent-prediction JEPA) | vicreg (two-view)
+  hidden: 64
+  out_dim: 256           # latent dim D
+  depth: 4               # conv blocks (stride-2 each)
+  n_frames: 8            # latent frames (predictive only)
+  n_context: 4           # context frames; predict the rest (predictive only)
+  action_dim: 8          # step-token width fed to RNNPredictor (predictive only)
+  ema: 0.996             # momentum for the target encoder (predictive only)
+  std_coeff: 25.0        # VICReg variance hinge (anti-collapse)
+  cov_coeff: 1.0         # VICReg covariance decorrelation
+  reg_coeff: 1.0         # weight of anti-collapse vs latent prediction (predictive)
+  projector: null        # VICReg projector spec, e.g. "256-1024-1024" (null = auto)
+optim:
+  epochs: 30
+  lr: 0.001
+  weight_decay: 1.0e-6
+training:
+  use_amp: true
+logging:
+  log_every: 50
