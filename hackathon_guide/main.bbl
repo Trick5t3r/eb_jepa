@@ -5,6 +5,11 @@
   \providecommand{\doi}[1]{doi: #1}\else
   \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
 
+\bibitem[Ahmed et~al.(2017)Ahmed, Palleti, and Mathur]{WADI}
+Chuadhry~Mujeeb Ahmed, Venkata~Reddy Palleti, and Aditya~P. Mathur.
+\newblock {WADI}: a water distribution testbed for research in the design of secure cyber physical systems.
+\newblock In \emph{International Workshop on Cyber-Physical Systems for Smart Water Networks (CySWATER)}, pp.\ 25--28, 2017.
+
 \bibitem[Assran et~al.(2023)Assran, Duval, Misra, Bojanowski, Vincent, Rabbat, LeCun, and Ballas]{IJEPA}
 Mahmoud Assran, Quentin Duval, Ishan Misra, Piotr Bojanowski, Pascal Vincent, Michael Rabbat, Yann LeCun, and Nicolas Ballas.
 \newblock Self-supervised learning from images with a joint-embedding predictive architecture.
@@ -92,6 +97,11 @@ Alexey Dosovitskiy, Lucas Beyer, Alexander Kolesnikov, Dirk Weissenborn, Xiaohua
 \newblock An image is worth 16x16 words: Transformers for image recognition at scale.
 \newblock In \emph{ICLR}, 2021.
 
+\bibitem[Downs \& Vogel(1993)Downs and Vogel]{TEP}
+J.~J. Downs and E.~F. Vogel.
+\newblock A plant-wide industrial process control problem.
+\newblock \emph{Computers \& Chemical Engineering}, 17\penalty0 (3):\penalty0 245--255, 1993.
+
 \bibitem[Espeholt et~al.(2018)Espeholt, Soyer, Munos, Simonyan, Mnih, Ward, Doron, Firoiu, Harley, Dunning, Legg, and Kavukcuoglu]{Impala}
 Lasse Espeholt, Hubert Soyer, Remi Munos, Karen Simonyan, Vlad Mnih, Tom Ward, Yotam Doron, Vlad Firoiu, Tim Harley, Iain Dunning, Shane Legg, and Koray Kavukcuoglu.
 \newblock {IMPALA}: Scalable distributed deep-{RL} with importance weighted actor-learner architectures.
@@ -106,6 +116,16 @@ Quentin Garrido, Mahmoud Assran, Nicolas Ballas, Adrien Bardes, Laurent Najman, 
 Quentin Garrido, Nicolas Ballas, Mahmoud Assran, Adrien Bardes, Laurent Najman, Michael Rabbat, Emmanuel Dupoux, and Yann LeCun.
 \newblock Intuitive physics understanding emerges from self-supervised pretraining on natural videos, 2025.
 \newblock URL \url{https://arxiv.org/abs/2502.11831}.
+
+\bibitem[Godahewa et~al.(2021)Godahewa, Bergmeir, Webb, Hyndman, and Montero-Manso]{MonashTSF}
+Rakshitha Godahewa, Christoph Bergmeir, Geoffrey~I. Webb, Rob~J. Hyndman, and Pablo Montero-Manso.
+\newblock Monash time series forecasting archive.
+\newblock In \emph{NeurIPS Track on Datasets and Benchmarks}, 2021.
+
+\bibitem[Goh et~al.(2016)Goh, Adepu, Junejo, and Mathur]{SWaT}
+Jonathan Goh, Sridhar Adepu, Khurum~Nazir Junejo, and Aditya Mathur.
+\newblock A dataset to support research in the design of secure water treatment systems.
+\newblock In \emph{International Conference on Critical Information Infrastructures Security (CRITIS)}, pp.\ 88--99, 2016.
 
 \bibitem[Grill et~al.(2020)Grill, Strub, Altché, Tallec, Richemond, Buchatskaya, Doersch, Pires, Guo, Azar, Piot, Kavukcuoglu, Munos, and Valko]{BYOL}
 Jean-Bastien Grill, Florian Strub, Florent Altché, Corentin Tallec, Pierre~H. Richemond, Elena Buchatskaya, Carl Doersch, Bernardo~Avila Pires, Zhaohan~Daniel Guo, Mohammad~Gheshlaghi Azar, Bilal Piot, Koray Kavukcuoglu, Rémi Munos, and Michal Valko.
@@ -181,6 +201,11 @@ Wei-Bang Jiang, Li-Ming Zhao, and Bao-Liang Lu.
 \newblock In \emph{International Conference on Learning Representations (ICLR)}, 2024.
 \newblock URL \url{https://arxiv.org/abs/2405.18765}.
 
+\bibitem[Lai et~al.(2018)Lai, Chang, Yang, and Liu]{LSTNet}
+Guokun Lai, Wei-Cheng Chang, Yiming Yang, and Hanxiao Liu.
+\newblock Modeling long- and short-term temporal patterns with deep neural networks.
+\newblock In \emph{ACM SIGIR}, pp.\ 95--104, 2018.
+
 \bibitem[LeCun(2022)]{PathAMI}
 Yann LeCun.
 \newblock A path towards autonomous machine intelligence.
@@ -206,6 +231,11 @@ Lucas Maes, Quentin Le~Lidec, Luiz Facury, Nassim Massaudi, Ayush Chaurasia, Fra
 Ofir Nachum, Shixiang~(Shane) Gu, Honglak Lee, and Sergey Levine.
 \newblock Data-efficient hierarchical reinforcement learning.
 \newblock In S.~Bengio, H.~Wallach, H.~Larochelle, K.~Grauman, N.~Cesa-Bianchi, and R.~Garnett (eds.), \emph{NeurIPS}, volume~31. Curran Associates, Inc., 2018.
+
+\bibitem[Ntakaris et~al.(2018)Ntakaris, Magris, Kanniainen, Gabbouj, and Iosifidis]{FI2010}
+Adamantios Ntakaris, Martin Magris, Juho Kanniainen, Moncef Gabbouj, and Alexandros Iosifidis.
+\newblock Benchmark dataset for mid-price forecasting of limit order book data with machine learning methods.
+\newblock \emph{Journal of Forecasting}, 37\penalty0 (8):\penalty0 852--866, 2018.
 
 \bibitem[Obeid \& Picone(2016)Obeid and Picone]{TUEG}
 Iyad Obeid and Joseph Picone.
@@ -242,6 +272,17 @@ R.~P. Rao and D.~H. Ballard.
 \newblock ISSN 1097-6256.
 \newblock \doi{10.1038/4580}.
 \newblock URL \url{http://dx.doi.org/10.1038/4580}.
+
+\bibitem[Rieth et~al.(2017)Rieth, Amsel, Tran, and Cook]{riethTEP}
+Cory~A. Rieth, Ben~D. Amsel, Randy Tran, and Maia~B. Cook.
+\newblock Additional {T}ennessee {E}astman process simulation data for anomaly detection evaluation.
+\newblock Harvard Dataverse, 2017.
+\newblock \doi{10.7910/DVN/6C3JR1}.
+
+\bibitem[Saxena et~al.(2008)Saxena, Goebel, Simon, and Eklund]{CMAPSS}
+Abhinav Saxena, Kai Goebel, Don Simon, and Neil Eklund.
+\newblock Damage propagation modeling for aircraft engine run-to-failure simulation.
+\newblock In \emph{International Conference on Prognostics and Health Management (PHM)}, pp.\ 1--9, 2008.
 
 \bibitem[Schmidhuber(2015)]{Schmidhuber2015}
 Juergen Schmidhuber.
@@ -307,6 +348,21 @@ Limin Wang, Bingkun Huang, Zhiyu Zhao, Zhan Tong, Yinan He, Yi~Wang, Yali Wang, 
 Grady Williams, Andrew Aldrich, and Evangelos Theodorou.
 \newblock Model predictive path integral control using covariance variable importance sampling, 2015.
 
+\bibitem[Wu et~al.(2021)Wu, Xu, Wang, and Long]{Autoformer}
+Haixu Wu, Jiehui Xu, Jianmin Wang, and Mingsheng Long.
+\newblock Autoformer: Decomposition transformers with auto-correlation for long-term series forecasting.
+\newblock In \emph{NeurIPS}, 2021.
+
+\bibitem[Wu et~al.(2023)Wu, Hu, Liu, Zhou, Wang, and Long]{TimesNet}
+Haixu Wu, Tengge Hu, Yong Liu, Hang Zhou, Jianmin Wang, and Mingsheng Long.
+\newblock {TimesNet}: Temporal 2{D}-variation modeling for general time series analysis.
+\newblock In \emph{ICLR}, 2023.
+
+\bibitem[Wu \& Keogh(2023)Wu and Keogh]{UCRanomaly}
+Renjie Wu and Eamonn~J. Keogh.
+\newblock Current time series anomaly detection benchmarks are flawed and are creating the illusion of progress.
+\newblock \emph{IEEE Transactions on Knowledge and Data Engineering}, 35\penalty0 (3):\penalty0 2421--2429, 2023.
+
 \bibitem[Zbontar et~al.(2021)Zbontar, Jing, Misra, LeCun, and Deny]{BarlowTwins}
 Jure Zbontar, Li~Jing, Ishan Misra, Yann LeCun, and St{\'e}phane Deny.
 \newblock Barlow twins: Self-supervised learning via redundancy reduction.
@@ -321,5 +377,10 @@ Gaoyue Zhou, Hengkai Pan, Yann LeCun, and Lerrel Pinto.
 Guangyao Zhou, Sivaramakrishnan Swaminathan, Rajkumar~Vasudeva Raju, J.~Swaroop Guntupalli, Wolfgang Lehrach, Joseph Ortiz, Antoine Dedieu, Miguel Lázaro-Gredilla, and Kevin Murphy.
 \newblock Diffusion model predictive control.
 \newblock \emph{arXiv preprint arXiv:2410.05364}, 2024{\natexlab{b}}.
+
+\bibitem[Zhou et~al.(2021)Zhou, Zhang, Peng, Zhang, Li, Xiong, and Zhang]{Informer}
+Haoyi Zhou, Shanghang Zhang, Jieqi Peng, Shuai Zhang, Jianxin Li, Hui Xiong, and Wancai Zhang.
+\newblock Informer: Beyond efficient transformer for long sequence time-series forecasting.
+\newblock In \emph{AAAI}, 2021.
 
 \end{thebibliography}

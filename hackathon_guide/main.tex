@@ -131,7 +131,7 @@
 \title{EB-JEPA Hackathon Field Guide\\[0.3em]
 \large A 24-Hour Sprint Through Joint-Embedding Predictive Architectures}
 
-\author{Organizing Team\\
+\author{Basile Terver and Théo Le Pendeven\\
 EB-JEPA Hackathon\\
 \texttt{github.com/facebookresearch/eb\_jepa}
 }
@@ -260,8 +260,10 @@ the three examples in the run-it / read-it / tweak-it pattern. \Cref{sec:extensi
 is the reference you will return to most: the exact extension points for
 encoders, predictors, regularizers, and datasets. \Cref{sec:tracks} is the
 project menu. \Cref{sec:logistics} covers compute, deliverables, and judging.
-Throughout, \code{monospaced paths} point at real files in the repository, and
-boxes flag \textbf{tips}, \textbf{gotchas}, and \textbf{notes} worth pausing on.
+For prior work, a curated per-track reading list lives in \code{references/README.md}
+at the repo root (see \Cref{sec:tracks}). Throughout, \code{monospaced paths} point
+at real files in the repository, and boxes flag \textbf{tips}, \textbf{gotchas},
+and \textbf{notes} worth pausing on.
 \section{The JEPA Recipe in Two Pages}
 \label{sec:recipe}
 
@@ -922,6 +924,16 @@ goal, the files you will touch, and a success metric. Difficulty badges:
 solid full-day project; \diffhard{} is high-risk, high-reward, attempt it only if
 your baseline is already running.
 
+\begin{notebox}
+\textbf{The reading list.} A curated, per-track bibliography lives in
+\code{references/README.md} at the repo root: one folder per paper
+(\code{references/paper/<slug>/} with the PDF and a structured \code{SUMMARY.md}),
+organized into a \textbf{Core} set (EB-JEPA and the JEPA world-model line it builds
+on) plus three maturity tiers, every row tagged with the modality or track it
+serves. Find the prior work for your track there, and read its \code{SUMMARY.md}
+before the PDF.
+\end{notebox}
+
 \paragraph{What makes a good new-modality target.} The headline theme is
 \emph{continuous, high-dimensional, noisy} data, exactly where predicting in pixel
 or sample space is wasteful and predicting in a learned latent space shines. A
@@ -1055,16 +1067,167 @@ open question: here the gain is representational, not pixel-accurate rollout.
 ~|~ HF \href{https://huggingface.co/datasets/polymathic-ai/gray_scott_reaction_diffusion}{polymathic-ai/gray\_scott\_reaction\_diffusion}.
 \end{trackbox}
 
-\begin{trackbox}{Track 5 --- Scientific / financial multivariate time series \hfill \diffmed{}}
-\textbf{Goal.} JEPA on noisy multivariate series (sensor networks, traffic, market
-data) with a downstream forecasting or regime-classification probe. The interesting
-research question: does latent prediction with anti-collapse regularization learn
-more transferable features than direct forecasting on noisy series?
-\textbf{Files:} time-series dataset; 1D encoder; \code{RNNPredictor}.
-\textbf{Metric:} downstream probe vs a supervised baseline on the same split.
+\paragraph{Forecasting as action-conditioned prediction (Tracks 5--7).} The
+three time-series tracks below share one mapping onto the codebase. The
+AC-video-JEPA (\cref{sec:acvideo}) is a latent dynamics model: given a state and
+an \emph{action}, it predicts the next state's representation. For a time series
+the ``action'' is whatever exogenous or control channel drives the
+system---actuator commands, manipulated set-points, the operating regime, known
+future covariates, or order-flow events---and ``predict the future'' is simply
+forecasting the next state in latent space. Anomaly detection then falls out for
+free: a fault or an attack is a \emph{violation of expectation}, a spike in
+prediction energy against the \emph{realised} future (rather than against a
+planning goal) that the action-conditioned dynamics cannot explain---the same
+signal the intuitive-physics track uses on impossible videos. Concretely: fork
+the AC-video-JEPA, feed it \code{(obs, action)} slices through a new
+\code{TrajDataset} (\cref{sec:extension}), drop the planner, and read off either
+the rollout forecast or the per-step energy. Two gotchas apply to all three: the
+hardcoded \code{action\_dim} (\cref{sec:acvideo}) and mandatory per-channel
+normalization (\cref{sec:extension}). With no control channel, the same recipe
+degenerates to the video-JEPA forecasting setting (\cref{sec:video}).
+
+
+% ===================== PASTE FROM HERE ========================================
+
+\begin{trackbox}{Track 5 --- Scientific multivariate time-series forecasting \hfill \diffmed{}/\diffhard{}}
+\textbf{Goal.} Pretrain a JEPA to predict the next window of a noisy scientific
+multivariate series in latent space, then probe it on long-horizon forecasting or
+regime classification. The research question: does anti-collapse latent prediction
+learn more transferable, less overfit features than direct forecasting on
+non-stationary signals?
+
+\smallskip
+\textbf{Data.} Use the \emph{de facto} long-horizon forecasting (LTSF) suite,
+shipped with fixed train/val/test splits and $\sim$30 baselines in the
+Time-Series-Library (\code{thuml/Time-Series-Library}) and introduced by
+Informer~\citep{Informer} and Autoformer~\citep{Autoformer}: \textbf{Weather} (21
+meteorological channels, 10-min), \textbf{ETT} (transformer oil temperature + 6
+power-load channels, hourly / 15-min), \textbf{Electricity} (321 clients, hourly),
+\textbf{Traffic} (862 road sensors, hourly), and \textbf{ILI} (weekly
+influenza-like-illness counts). For breadth across scientific domains (solar,
+temperature, hospital, nature), the Monash archive~\citep{MonashTSF} offers
+$\sim$25 datasets in a single \code{.tsf} format (\code{Monash-University/monash\_tsf}
+on Hugging Face). For spatiotemporal \emph{fields} rather than vector series, see
+Track~4 (The Well) and ERA5/WeatherBench.
+
+\smallskip
+\textbf{Action-conditioned angle.} \textbf{ETT} is the cleanest fit: condition the
+predictor on the six power-load channels (the ``action'') and forecast the oil
+temperature---a genuinely controlled physical system (thermal response to load).
+More generally, any dataset with \emph{known-future} exogenous covariates
+(calendar, weather driving electricity / traffic) lets \code{q\_omega} encode the
+covariate as the action; with none, drop to the video-JEPA forecasting setting.
+
+\smallskip
+\textbf{Files.} A windowed multivariate dataset wrapping the TSLib loaders (reuse
+their splits verbatim for comparability); a 1D-conv or patch encoder in
+\file{architectures.py}; the GRU \code{RNNPredictor} and the \code{[B, C, T, 1, 1]}
+convention.
+
+\smallskip
+\textbf{Metric.} Forecasting MSE / MAE at the standard horizons
+$\{96, 192, 336, 720\}$ (ILI: $\{24, 36, 48, 60\}$) against the published TSLib
+numbers (DLinear, PatchTST, iTransformer, TimesNet), or a frozen-feature probe vs.\
+a supervised baseline on the same split. Beating a strong linear baseline (DLinear)
+is the bar worth clearing.
 \end{trackbox}
 
-\begin{trackbox}{Track 6 --- 3D point clouds / LiDAR \hfill \diffhard{}}
+\begin{trackbox}{Track 6 --- Financial time series: limit order books \& forecasting \hfill \diffmed{}/\diffhard{}}
+\textbf{Goal.} Self-supervised features on high-frequency market data, probed on
+mid-price-movement prediction. The question: can latent prediction extract a usable
+signal from order-book dynamics that survives the brutal noise floor of financial
+data?
+
+\smallskip
+\textbf{Data.} \textbf{FI-2010}~\citep{FI2010} is the standard public limit-order-book
+(LOB) benchmark---often called the ``MNIST of high-frequency trading''---with
+$\sim$4M samples from five Nasdaq Nordic stocks over ten days, the top ten LOB
+levels (40 features: bid/ask price and volume), and 3-class mid-price-direction
+labels (up / stationary / down) at horizons $k \in \{10, 20, 30, 50, 100\}$ ticks;
+the standard protocol trains on the first seven days and tests on the last three.
+For lower-frequency forecasting, the \textbf{Exchange-Rate} set (eight countries'
+daily rates)~\citep{LSTNet} sits in the same LTSF suite as Track~5, and the Monash
+archive~\citep{MonashTSF} adds further financial series.
+
+\smallskip
+\textbf{Action-conditioned angle.} The order book evolves under a stream of
+events---placements, executions, cancellations. Treat that order flow (or
+order-flow imbalance) as the ``action'' driving the book: condition the predictor
+on the incoming event and forecast the next LOB state's representation, then read
+the mid-price direction off the predicted latent.
+
+\smallskip
+\textbf{Files.} A LOB dataset (FI-2010 ships normalized; public PyTorch loaders
+exist, e.g.\ the DeepLOB repositories); a temporal / 1D encoder; \code{RNNPredictor}.
+
+\smallskip
+\textbf{Metric.} 3-class mid-price F1 / accuracy at the standard horizons
+(frozen probe vs.\ supervised), or forecasting MSE / MAE on Exchange-Rate.
+
+\begin{gotchabox}
+Markets are near-efficient and adversarial; mid-price direction is genuinely hard
+and reported scores swing wildly with the label threshold and horizon. A clean
+controlled comparison (JEPA features vs.\ supervised, with the collapse you fought)
+is the win here---\emph{not} a number that looks like alpha. Treat any
+``profitable'' result with deep suspicion and check for look-ahead leakage first.
+\end{gotchabox}
+\end{trackbox}
+
+\begin{trackbox}{Track 7 --- Action-conditioned anomaly prediction \& predictive maintenance \hfill \diffmed{}/\diffhard{}}
+\textbf{The idea.} A JEPA trained only on \emph{healthy} operation learns the
+action-conditioned dynamics of a system; at test time a fault, attack, or
+degradation shows up as a spike in prediction energy---the model expected one
+future and reality delivered another. This is forecasting-based anomaly detection,
+and it is exactly the violation-of-expectation signal the intuitive-physics track
+uses, now on real industrial data with a genuine control channel.
+
+\smallskip
+\textbf{Data (three flavours, each with an action channel).}
+\begin{itemize}[leftmargin=1.4em,itemsep=2pt,topsep=2pt]
+  \item \emph{Cyber-physical attacks.} \textbf{SWaT} and \textbf{WADI}~\citep{SWaT,WADI}
+    are water treatment / distribution testbeds (iTrust, SUTD; request access) with
+    both sensors \emph{and actuators}: SWaT has 51 channels over 7 normal + 4 attack
+    days, WADI 123 channels over 14 + 2. Condition on the actuator commands (pump /
+    valve states); the attacks are the anomalies.
+  \item \emph{Process faults.} The \textbf{Tennessee Eastman Process}~\citep{TEP} is
+    the canonical closed-loop chemical-plant benchmark: 41 measured + \emph{11
+    manipulated} variables, 20 fault types, with a large multi-run simulation
+    set~\citep{riethTEP} (also packaged by \code{AIRI-Institute/fddbenchmark}). The
+    manipulated variables are the control actions, and the hard part is telling a
+    fault from a normal closed-loop control response.
+  \item \emph{Run-to-failure / RUL.} \textbf{NASA C-MAPSS}~\citep{CMAPSS} is
+    \emph{the} prognostics benchmark: turbofan run-to-failure trajectories, 21
+    sensors + \emph{3 operational settings} (altitude, Mach, throttle), four subsets
+    FD001--FD004 of rising difficulty. Condition on the operational settings, track
+    the drift of the latent, and regress remaining useful life.
+\end{itemize}
+
+\smallskip
+\textbf{Methodology caveat.} The popular multivariate sets are flawed: Wu \&
+Keogh~\citep{UCRanomaly} show the NASA telemetry sets (SMAP / MSL) contain trivial,
+mislabeled, end-loaded anomalies, and even SWaT has many constant channels and
+anomalies detectable from a single feature. For a clean, sound \emph{univariate}
+evaluation use their \textbf{UCR Anomaly Archive} (250 curated signals)---it has no
+action channel, so use it to validate the detector and SWaT / TEP / C-MAPSS to
+exercise the action-conditioned story. Report event / range-based F1 and AUROC
+(VUS-PR), not just point-adjusted F1, which inflates scores.
+
+\smallskip
+\textbf{Files.} A new \code{TrajDataset} yielding \code{(obs, action)} slices
+(\cref{sec:extension}) plus an \code{env\_name} branch in
+\file{datasets/utils.py:init\_data}; a 1D-conv encoder; \code{RNNPredictor}; the
+AC-video-JEPA dynamics model (\cref{sec:acvideo}) with the planner removed and a
+prediction-energy anomaly score. Watch the hardcoded \code{action\_dim}
+(SWaT / WADI: dozens of actuators; TEP: 11; C-MAPSS: 3) and normalize every channel.
+
+\smallskip
+\textbf{Metric.} SWaT / WADI / TEP: event-based F1 and AUROC of the energy score,
+healthy-only training. C-MAPSS: RUL RMSE and the NASA asymmetric score (which
+penalises late predictions more) on FD001 first, then the harder FD004.
+\end{trackbox}
+
+
+\begin{trackbox}{Track 8 --- 3D point clouds / LiDAR \hfill \diffhard{}}
 \textbf{Goal.} View-invariant JEPA on point clouds (ModelNet/ShapeNet): two
 augmented samplings/rotations of an object are the two views (image-JEPA setting),
 probed on shape classification. \textbf{Files:} a point-cloud dataset with geometric
@@ -1083,7 +1246,7 @@ SO(3) --- accuracy drops monotonically as the demanded rotation invariance grows
 % ===========================================================================
 \subsection{Group B: Push the vision and robotics examples}
 
-\begin{trackbox}{Track 7 --- Learned cost / value for planning \hfill \diffmed{}/\diffhard{}}
+\begin{trackbox}{Track 9 --- Learned cost / value for planning \hfill \diffmed{}/\diffhard{}}
 \textbf{Goal.} Distance-in-latent-space is a crude planning cost. Replace it with a
 learned cost or value function (TD-MPC style~\citep{TDMPC2,TD-MPC}) trained on the
 world model's own rollouts, so the agent optimizes a quantity that correlates with
@@ -1101,7 +1264,7 @@ matched A$^*$ subgoals; greedy global planning is 0\% for both costs.
 \emph{Data:} maze generated online (no dataset path / HF).
 \end{trackbox}
 
-\begin{trackbox}{Track 8 --- Hierarchical / multi-timescale world model \hfill \diffhard{}}
+\begin{trackbox}{Track 10 --- Hierarchical / multi-timescale world model \hfill \diffhard{}}
 \textbf{Goal.} JEPAs here predict at a single temporal resolution; intelligent
 planning wants several. Add a coarse predictor that models long-horizon
 abstractions on top of the fine per-step predictor, and plan with the coarse level
@@ -1120,7 +1283,7 @@ greedy and 0\% for a random-walk baseline). Co-training the two levels did
 \emph{Data:} maze generated online (no dataset path / HF).
 \end{trackbox}
 
-\begin{trackbox}{Track 9 --- Stress-test the recipe under factors of variation \hfill \diffhard{}}
+\begin{trackbox}{Track 11 --- Stress-test the recipe under factors of variation \hfill \diffhard{}}
 \textbf{Goal.} \texttt{eb\_jepa}'s Two Rooms is deliberately tiny. The open question
 is whether the \emph{minimal} recipe (VC + sim + IDM, distance-cost MPPI) survives
 realistic perturbations, and which term breaks first. Train an AC-video-JEPA-style
@@ -1135,7 +1298,7 @@ which regularizer term must be strengthened as the world gets harder. Ambitious 
 high-signal: it tells you where the toy recipe actually ends.
 \end{trackbox}
 
-\begin{trackbox}{Track 10 --- Does intuitive physics emerge? \hfill \diffmed{}}
+\begin{trackbox}{Track 12 --- Does intuitive physics emerge? \hfill \diffmed{}}
 \textbf{Goal.} Recent work shows physical intuition emerges from self-supervised
 video pretraining~\citep{garrido2025intuitivephysicsunderstandingemerges}. Test it
 in miniature on the video-JEPA: feed it physically plausible vs impossible Moving
