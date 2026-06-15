@@ -1191,6 +1191,26 @@ controlled comparison (JEPA features vs.\ supervised, with the collapse you foug
 is the win here---\emph{not} a number that looks like alpha. Treat any
 ``profitable'' result with deep suspicion and check for look-ahead leakage first.
 \end{gotchabox}
+
+\smallskip
+\textbf{poc.} Tested on
+\href{https://huggingface.co/datasets/thesven/fintime-decoder-dataset}{thesven/fintime-decoder-dataset}
+(697 instruments, 2010--2025; windows of $87$ engineered features $\times\,64$ daily steps).
+A predictive JEPA (1D conv encoder + \code{RNNPredictor} + EMA target + VICReg anti-collapse)
+was pretrained SSL, frozen, and probed against a random-encoder floor and an end-to-end
+supervised baseline. \emph{Negative result, exactly as the gotcha warns:} on the genuinely
+hard targets (next-step direction / return) the frozen JEPA \emph{does not beat the random
+encoder} (direction AUROC \textbf{0.58} vs random $0.58$ vs supervised $0.69$), and this
+still holds on raw \emph{OHLCV-only} inputs (6 channels); returns are $\approx$chance
+out-of-distribution for every method. The only non-trivial self-supervised signal comes
+from \emph{VICReg, not latent prediction} (volatility-regime acc \textbf{0.94} vs random
+$0.63$). \emph{Takeaway:} daily returns here are too close to efficient-market noise and the
+engineered inputs are already informative, so this dataset cannot separate latent-prediction
+from direct forecasting --- for a fair test of the track's hypothesis prefer a structured
+series with learnable dynamics (the LTSF / Exchange-Rate suites of Track~5, or FI-2010 LOB
+above).
+\emph{Data:} \code{/lustre/work/pdl17890/udl806719/datasets/Finance/fintime\_prep}
+~|~ HF \href{https://huggingface.co/datasets/thesven/fintime-decoder-dataset}{thesven/fintime-decoder-dataset}.
 \end{trackbox}
 
 \begin{trackbox}{Track 7 --- Action-conditioned anomaly prediction \& predictive maintenance \hfill \diffmed{}/\diffhard{}}
