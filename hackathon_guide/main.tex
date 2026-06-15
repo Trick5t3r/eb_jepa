@@ -1150,6 +1150,27 @@ $\{96, 192, 336, 720\}$ (ILI: $\{24, 36, 48, 60\}$) against the published TSLib
 numbers (DLinear, PatchTST, iTransformer, TimesNet), or a frozen-feature probe vs.\
 a supervised baseline on the same split. Beating a strong linear baseline (DLinear)
 is the bar worth clearing.
+
+\smallskip
+\textbf{poc.} Tested on \textbf{ETTh1} (\code{ailuntz/ETT-small}), TSLib 12/4/4 split,
+input $L=336$, normalized MSE/MAE on test. A predictive JEPA (1D conv encoder +
+\code{RNNPredictor} + EMA target + VICReg anti-collapse) was pretrained SSL on the
+train-window inputs, then a frozen-feature ridge head forecast horizons
+$\{96,192,336,720\}$, against a random-encoder floor, an end-to-end supervised head,
+and an NLinear/DLinear baseline. \emph{The linear baseline dominates by $\sim$5$\times$}
+(MSE \textbf{0.37 / 0.40 / 0.43 / 0.43}, matching the published DLinear numbers ---
+confirming the split/normalization are correct), while frozen-JEPA $\approx$ random
+$\approx$ supervised (MSE $\approx$1.2--2.9). Crucially the \emph{whole global-pooled
+conv-encoder family} fails, not JEPA specifically: the supervised version of the same
+backbone also loses to the linear map, reproducing the Zeng et al.\ (DLinear) lesson
+that a pooled representation discards the level / last-value information ETT rewards;
+latent prediction adds no transfer under this probe. \emph{Caveat:} the probe forecasts
+from a single time-pooled vector --- a fairer JEPA-for-LTSF eval would keep a
+per-patch / per-timestep representation (PatchTST-style) or fine-tune end-to-end, so this
+is evidence against \emph{a global-pooled conv-JEPA representation} here, not against JEPA
+forecasting in general ($n{=}1$ seed, ETTh1 only).
+\emph{Data:} \code{/lustre/work/pdl17890/udl806719/datasets/LTSF/ETT-small}
+~|~ HF \href{https://huggingface.co/datasets/ailuntz/ETT-small}{ailuntz/ETT-small}.
 \end{trackbox}
 
 \begin{trackbox}{Track 6 --- Financial time series: limit order books \& forecasting \hfill \diffmed{}/\diffhard{}}
