@@ -11,11 +11,11 @@
 #SBATCH --gres=gpu:1
 #SBATCH --time=1:30:0
 #SBATCH --job-name=eb_jepa_gpu_stream
-#SBATCH --output=/lustre/work/pdl17890/udl806719/logs/gpu_stream_%j.out
+#SBATCH --output=/lustre/work/pdl17890/%u/logs/gpu_stream_%j.out
 
 set -e
 
-REPO=/lustre/home/extusers/udl806719/dev/eb_jepa
+REPO="${EBJEPA_REPO:-$SLURM_SUBMIT_DIR}"
 source "$REPO/env.sh"
 cd "$REPO"
 
@@ -27,7 +27,7 @@ CFG="$REPO/examples/ac_video_jepa/cfgs/train_ex_reduction_of_walltime.yaml"
 SEED=1
 SWEEP="dev_$(date +%Y-%m-%d_%H-%M)"
 EXP_NAME="impala_cov8_std16_simt12_idm1"
-CKPT_BASE="/lustre/work/pdl17890/udl806719/checkpoints"
+CKPT_BASE="${WORK}/checkpoints"
 EXP_FOLDER="${CKPT_BASE}/ac_video_jepa/${SWEEP}/${EXP_NAME}_seed${SEED}"
 
 echo "=== Phase 1: Training ==="

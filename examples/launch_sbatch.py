@@ -69,7 +69,7 @@ from eb_jepa.training_utils import (
 
 # Default SLURM parameters — HTW cluster (defq, GB200 nodes, aarch64)
 # Compute-node target arch — override with EBJEPA_COMPUTE_ARCH env var (e.g. x86_64 on other clusters)
-_WORK = os.environ.get("EBJEPA_WORK", "/lustre/work/pdl17890/udl806719")
+_WORK = os.environ.get("EBJEPA_WORK", f"/lustre/work/pdl17890/{os.environ.get('USER', '')}")
 _COMPUTE_ARCH = os.environ.get("EBJEPA_COMPUTE_ARCH", "aarch64")
 COMPUTE_PYTHON = f"{_WORK}/venvs/eb_jepa_{_COMPUTE_ARCH}/bin/python3"
 

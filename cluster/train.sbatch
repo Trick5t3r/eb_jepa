@@ -16,11 +16,11 @@
 #SBATCH --gres=gpu:1
 #SBATCH --time=1:0:0
 #SBATCH --job-name=eb_jepa_train
-#SBATCH --output=/lustre/work/pdl17890/udl806719/logs/train_%j.out
+#SBATCH --output=/lustre/work/pdl17890/%u/logs/train_%j.out
 
 set -e
 
-REPO=/lustre/home/extusers/udl806719/dev/eb_jepa
+REPO="${EBJEPA_REPO:-$SLURM_SUBMIT_DIR}"
 source "$REPO/env.sh"
 cd "$REPO"
 

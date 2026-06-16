@@ -5,7 +5,7 @@ Scripts for monitoring jobs, GPU usage, and logs. All read-only — they never s
 Add to PATH for convenience (already done if you source `env.sh` with the snippet below):
 
 ```bash
-export PATH="/lustre/home/extusers/udl806719/dev/eb_jepa/cluster:$PATH"
+export PATH="$EBJEPA_REPO/cluster:$PATH"   # $EBJEPA_REPO is set by env.sh
 ```
 
 ---

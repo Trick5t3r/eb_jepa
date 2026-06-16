@@ -7,18 +7,18 @@
 #SBATCH --gres=gpu:1
 #SBATCH --time=1:00:00
 #SBATCH --job-name=hwt_eval_gpu_stream
-#SBATCH --output=/lustre/work/pdl17890/udl806719/logs/hwt_eval_gpu_stream_%j.out
+#SBATCH --output=/lustre/work/pdl17890/%u/logs/hwt_eval_gpu_stream_%j.out
 
 set -e
 
-REPO=/lustre/home/extusers/udl806719/dev/eb_jepa
+REPO="${EBJEPA_REPO:-$SLURM_SUBMIT_DIR}"
 source "$REPO/env.sh"
 cd "$REPO"
 
 PYTHON="$UV_PROJECT_ENVIRONMENT/bin/python3"
 CFG="$REPO/examples/ac_video_jepa/cfgs/train_ex_reduction_of_walltime.yaml"
 SEED=1
-EXP_FOLDER="/lustre/work/pdl17890/udl806719/checkpoints/ac_video_jepa/hwt_2026-06-02/impala_cov8_std16_simt12_idm1_gpu_stream_seed${SEED}"
+EXP_FOLDER="${WORK}/checkpoints/ac_video_jepa/hwt_2026-06-02/impala_cov8_std16_simt12_idm1_gpu_stream_seed${SEED}"
 
 echo "=== hwt eval gpu_stream ==="
 echo "    node       : $(hostname)"

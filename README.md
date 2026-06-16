@@ -72,6 +72,33 @@ JEPA for world modeling + planning in Two Rooms environment.
 
 ## 🚀 Installation
 
+### HTW cluster — quick start
+
+**Work entirely from `/lustre/work`, not your home** — the `/lustre/home` quota is
+small and blocks git, venvs and model downloads.
+
+```bash
+# 1. clone into your personal work directory
+cd /lustre/work/pdl17890/$USER
+git clone <repo-url> eb_jepa && cd eb_jepa
+
+# 2. one-shot setup (installs uv, syncs the venv, submits the aarch64 venv job)
+bash setup.sh
+
+# 3. make it persistent — env.sh sets WORK, caches, venv and the cluster PATH
+echo "source /lustre/work/pdl17890/$USER/eb_jepa/env.sh" >> ~/.bashrc
+source ~/.bashrc
+
+# 4. verify
+sbatch slurm_test.sh        # runs pytest on a GPU node
+```
+
+`env.sh` derives everything from `$USER` and keeps **all** caches (uv, HuggingFace,
+torch, triton/`torch.compile`, pip, W&B) under `$WORK/.cache` — nothing touches home.
+Override the work root with `export EBJEPA_WORK=/your/path` before sourcing.
+
+### Local / generic
+
 We use [uv](https://docs.astral.sh/uv/guides/projects/) for package management.
 
 ```bash

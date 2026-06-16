@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 # One-shot setup script for EB-JEPA on the HTW cluster.
+#
+# IMPORTANT: clone and run everything from /lustre/work (NOT your home) — the
+# /lustre/home quota is small and blocks git + venvs. Recommended:
+#     cd /lustre/work/pdl17890/$USER && git clone <repo> && cd eb_jepa && bash setup.sh
+#
 # Run once from the repo root: bash setup.sh
 set -e
 
@@ -17,9 +22,12 @@ echo ""
 # 1. Make cluster scripts executable and ensure they're in PATH via env.sh
 chmod +x "$REPO_ROOT"/cluster/{sq,qall,log,gpus,users}
 
-# 2. Create required directories in the work partition
+# 2. Create required directories in the work partition (venvs, caches, logs, ckpts).
+#    All caches live on /work so the small /lustre/home quota never fills up.
 mkdir -p "$UV_INSTALL_DIR" "$UV_CACHE_DIR" "$WORK/venvs" \
-         "$WORK/checkpoints" "$WORK/logs"
+         "$WORK/checkpoints" "$WORK/logs" \
+         "$XDG_CACHE_HOME" "$HF_HOME" "$TORCH_HOME" "$TRITON_CACHE_DIR" \
+         "$PIP_CACHE_DIR" "$WANDB_DIR" "$WANDB_CACHE_DIR"
 
 # 3. Install uv for the current arch if not already present
 if ! "$UV_INSTALL_DIR/uv" --version &>/dev/null; then
