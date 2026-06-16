@@ -7,12 +7,12 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --gres=gpu:1
 #SBATCH --time=00:30:00
-#SBATCH --output=/lustre/work/pdl17890/udl806719/logs/slurm_test_%j.out
-#SBATCH --error=/lustre/work/pdl17890/udl806719/logs/slurm_test_%j.err
+#SBATCH --output=/lustre/work/pdl17890/%u/logs/slurm_test_%j.out
+#SBATCH --error=/lustre/work/pdl17890/%u/logs/slurm_test_%j.err
 
 set -e
 
-REPO=/lustre/home/extusers/udl806719/dev/eb_jepa
+REPO="${EBJEPA_REPO:-$SLURM_SUBMIT_DIR}"
 source "$REPO/env.sh"
 
 echo "=== Host: $(hostname) | Arch: $ARCH | Date: $(date) ==="

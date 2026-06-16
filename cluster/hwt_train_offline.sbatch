@@ -7,19 +7,19 @@
 #SBATCH --gres=gpu:1
 #SBATCH --time=2:00:00
 #SBATCH --job-name=hwt_offline
-#SBATCH --output=/lustre/work/pdl17890/udl806719/logs/hwt_offline_%j.out
+#SBATCH --output=/lustre/work/pdl17890/%u/logs/hwt_offline_%j.out
 
 set -e
 
-REPO=/lustre/home/extusers/udl806719/dev/eb_jepa
+REPO="${EBJEPA_REPO:-$SLURM_SUBMIT_DIR}"
 source "$REPO/env.sh"
 cd "$REPO"
 
 PYTHON="$UV_PROJECT_ENVIRONMENT/bin/python3"
 CFG="$REPO/examples/ac_video_jepa/cfgs/train_ex_reduction_of_walltime.yaml"
 SEED=1
-EXP_FOLDER="/lustre/work/pdl17890/udl806719/checkpoints/ac_video_jepa/hwt_2026-06-02/impala_cov8_std16_simt12_idm1_offline_seed${SEED}"
-DSET_DIR="/lustre/work/pdl17890/udl806719/datasets/two_rooms_hwt_2026-06-02"
+EXP_FOLDER="${WORK}/checkpoints/ac_video_jepa/hwt_2026-06-02/impala_cov8_std16_simt12_idm1_offline_seed${SEED}"
+DSET_DIR="${WORK}/datasets/two_rooms_hwt_2026-06-02"
 
 echo "=== hwt offline: Phase 1 — dataset generation ==="
 echo "    node       : $(hostname)"
