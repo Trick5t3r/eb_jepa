@@ -1,14 +1,52 @@
 #!/usr/bin/env bash
 # One-shot setup script for EB-JEPA on the HTW cluster.
 #
-# IMPORTANT: clone and run everything from /lustre/work (NOT your home) — the
-# /lustre/home quota is small and blocks git + venvs. Recommended:
-#     cd /lustre/work/pdl17890/$USER && git clone <repo> && cd eb_jepa && bash setup.sh
-#
-# Run once from the repo root: bash setup.sh
+# Clone the repo ANYWHERE (even your home) and run `bash setup.sh`: it relocates
+# itself to your work partition ($WORK/eb_jepa), sets everything up there, and leaves
+# only a pointer README where you cloned it. You then just `cd` into the work copy.
+# (The /lustre/home quota is too small for git + venvs + model caches.)
 set -e
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# --- Self-relocate to the work partition --------------------------------------
+TARGET_WORK="${EBJEPA_WORK:-/lustre/work/pdl17890/$USER}"
+TARGET="$TARGET_WORK/eb_jepa"
+if [ "$REPO_ROOT" != "$TARGET" ]; then
+    echo "=== Relocating EB-JEPA to your work partition ==="
+    echo "    from : $REPO_ROOT"
+    echo "    to   : $TARGET"
+    mkdir -p "$TARGET_WORK"
+    if [ -d "$TARGET/.git" ]; then
+        echo ">>> $TARGET already exists — reusing it."
+    else
+        rsync -a "$REPO_ROOT/" "$TARGET/" 2>/dev/null || cp -a "$REPO_ROOT/." "$TARGET/"
+    fi
+    [ -d "$TARGET/.git" ] || { echo "!! copy to $TARGET failed"; exit 1; }
+    echo ">>> continuing setup from $TARGET ..."
+    exec env EBJEPA_ORIG_CLONE="$REPO_ROOT" bash "$TARGET/setup.sh"
+fi
+
+# If we got here via relocation, reduce the original clone to a pointer README.
+if [ -n "${EBJEPA_ORIG_CLONE:-}" ] && [ "$EBJEPA_ORIG_CLONE" != "$TARGET" ] \
+   && [ "$EBJEPA_ORIG_CLONE" != "$HOME" ] && [ -d "$EBJEPA_ORIG_CLONE" ]; then
+    find "$EBJEPA_ORIG_CLONE" -mindepth 1 -delete 2>/dev/null || true
+    cat > "$EBJEPA_ORIG_CLONE/README.md" <<EOF
+# EB-JEPA moved to your work partition
+
+This clone was relocated (with its git history) to your work partition, because the
+/lustre/home quota is too small for git, virtualenvs and model caches.
+
+Go there and work from it:
+
+    cd $TARGET
+
+Then it is fully set up — \`source env.sh\` (already added to ~/.bashrc) and, to verify,
+\`sbatch slurm_test.sh\`.
+EOF
+    echo ">>> Original clone cleaned — only a pointer README.md remains at $EBJEPA_ORIG_CLONE"
+fi
+
 source "$REPO_ROOT/env.sh"
 
 echo "=== EB-JEPA cluster setup ==="

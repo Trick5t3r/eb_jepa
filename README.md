@@ -74,28 +74,29 @@ JEPA for world modeling + planning in Two Rooms environment.
 
 ### HTW cluster — quick start
 
-**Work entirely from `/lustre/work`, not your home** — the `/lustre/home` quota is
-small and blocks git, venvs and model downloads.
+**Everything must live on `/lustre/work`, not your home** — the `/lustre/home` quota is
+small and blocks git, venvs and model downloads. You don't have to clone in the right
+place: `setup.sh` **relocates itself to `/lustre/work` automatically**.
 
 ```bash
-# 1. clone into your personal work directory
-cd /lustre/work/pdl17890/$USER
+# 1. clone anywhere (even your home) and run setup
 git clone <repo-url> eb_jepa && cd eb_jepa
-
-# 2. one-shot setup (installs uv, syncs the venv, submits the aarch64 venv job)
 bash setup.sh
+#    -> the repo is copied to /lustre/work/pdl17890/$USER/eb_jepa, set up there,
+#       and the folder you cloned in is reduced to a one-line pointer README.
 
-# 3. make it persistent — env.sh sets WORK, caches, venv and the cluster PATH
-echo "source /lustre/work/pdl17890/$USER/eb_jepa/env.sh" >> ~/.bashrc
-source ~/.bashrc
+# 2. move into the work copy (the pointer README tells you the exact path)
+cd /lustre/work/pdl17890/$USER/eb_jepa
 
-# 4. verify
+# 3. make it persistent + verify
+echo "source $(pwd)/env.sh" >> ~/.bashrc && source ~/.bashrc
 sbatch slurm_test.sh        # runs pytest on a GPU node
 ```
 
-`env.sh` derives everything from `$USER` and keeps **all** caches (uv, HuggingFace,
-torch, triton/`torch.compile`, pip, W&B) under `$WORK/.cache` — nothing touches home.
-Override the work root with `export EBJEPA_WORK=/your/path` before sourcing.
+`env.sh` derives everything from `$USER`, keeps **all** caches (uv, HuggingFace, torch,
+triton/`torch.compile`, pip, W&B) under `$WORK/.cache` — nothing touches home — and points
+`EBJEPA_DSETS` at the **shared dataset folder** provided for everyone. Override the work
+root with `export EBJEPA_WORK=/your/path` before running setup.
 
 ### Local / generic
 
