@@ -21,13 +21,14 @@ import copy
 import torch
 from torch import nn
 
-from eb_jepa.architectures import Projector, RNNPredictor
+from eb_jepa.architectures import Projector
 from eb_jepa.losses import VCLoss, VICRegLoss
+from examples.pipeline.core.predictors import build_predictor
 
 
 class PredictiveJEPA(nn.Module):
-    def __init__(self, encoder, action_dim=8, ema=0.996,
-                 std_coeff=25.0, cov_coeff=1.0, reg_coeff=1.0, n_context=4):
+    def __init__(self, encoder, predictor="rnn", ema=0.996, std_coeff=25.0,
+                 cov_coeff=1.0, reg_coeff=1.0, n_context=4, mcfg=None):
         super().__init__()
         self.encoder = encoder
         self.dim, self.n_frames = encoder.out_dim, encoder.n_frames
@@ -35,9 +36,7 @@ class PredictiveJEPA(nn.Module):
         self.target = copy.deepcopy(encoder)
         for p in self.target.parameters():
             p.requires_grad_(False)
-        self.predictor = RNNPredictor(hidden_size=self.dim, action_dim=action_dim,
-                                      num_layers=1, final_ln=nn.LayerNorm(self.dim))
-        self.step_token = nn.Parameter(torch.zeros(action_dim))
+        self.predictor = build_predictor(predictor, self.dim, self.n_frames, mcfg or {})
         self.reg = VCLoss(std_coeff=std_coeff, cov_coeff=cov_coeff)
 
     @torch.no_grad()
@@ -47,22 +46,12 @@ class PredictiveJEPA(nn.Module):
         for bt, bo in zip(self.target.buffers(), self.encoder.buffers()):
             bt.copy_(bo)
 
-    def _roll(self, state0, n_steps):
-        b = state0.shape[0]
-        s = state0.reshape(b, self.dim, 1, 1, 1)
-        a = self.step_token.view(1, -1, 1).expand(b, -1, 1)
-        out = []
-        for _ in range(n_steps):
-            s = self.predictor(s, a)
-            out.append(s.reshape(b, self.dim))
-        return torch.stack(out, dim=1)
-
     def compute_loss(self, x):
         z = self.encoder.frames(x)
         with torch.no_grad():
             z_tgt = self.target.frames(x)
         nc = self.n_context
-        z_hat = self._roll(z[:, nc - 1], self.n_frames - nc)
+        z_hat = self.predictor.predict(z, nc)
         pred = nn.functional.mse_loss(z_hat, z_tgt[:, nc:].detach())
         reg, _, rd = self.reg(z.reshape(-1, self.dim))
         return pred + self.reg_coeff * reg, {"pred": pred.item(), "reg": reg.item(), **rd}
@@ -95,10 +84,10 @@ class TwoViewVICReg(nn.Module):
 def build_ssl(method, encoder, cfg):
     """Factory: 'predictive' | 'vicreg'. cfg is the OmegaConf model section."""
     if method == "predictive":
-        return PredictiveJEPA(encoder, action_dim=cfg.get("action_dim", 8),
+        return PredictiveJEPA(encoder, predictor=cfg.get("predictor", "rnn"),
                               ema=cfg.get("ema", 0.996), std_coeff=cfg.get("std_coeff", 25.0),
                               cov_coeff=cfg.get("cov_coeff", 1.0), reg_coeff=cfg.get("reg_coeff", 1.0),
-                              n_context=cfg.get("n_context", encoder.n_frames // 2))
+                              n_context=cfg.get("n_context", encoder.n_frames // 2), mcfg=cfg)
     if method == "vicreg":
         return TwoViewVICReg(encoder, projector_spec=cfg.get("projector", None),
                              std_coeff=cfg.get("std_coeff", 25.0), cov_coeff=cfg.get("cov_coeff", 1.0))

@@ -9,15 +9,10 @@ Run it with:
     python -m examples.pipeline.cli.pretrain --track <yourname> --config <cfg.yaml>
     python -m examples.pipeline.cli.evaluate --track <yourname> --ckpt <latest.pth.tar>
 
-Reference implementations to crib from (sibling worktrees):
-    finance / multivariate TS : worktrees/fintime_jepa/examples/fintime
-    LTSF forecasting (ETT)    : worktrees/ltsf_jepa/examples/ltsf
-    EEG two-view VICReg       : worktrees/neurojepa/examples/eeg_ssl
-    EEG temporal JEPA / IDM   : worktrees/neurojepa/examples/eeg_tuev
-    audio (raw + mel)         : worktrees/audio_jepa/examples/audio_jepa
-    point clouds (PointNet)   : worktrees/pointcloud_jepa/examples
-    PDE fields (2D, VRMSE)    : worktrees/gray_scott_jepa/examples
-A fully-working example with no external data: tracks/synthetic_track.py
+A fully-working example to mimic (no external data, no track-specific solution):
+    tracks/synthetic_track.py
+Stuck on a hook? Re-read tracks/base.py and the core/ docstrings, or ask a mentor —
+no reference solution is shipped here.
 """
 import numpy as np
 import torch

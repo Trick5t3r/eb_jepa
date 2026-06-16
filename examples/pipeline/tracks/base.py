@@ -20,7 +20,7 @@ Optional overrides:
   * extra_baselines(cfg,dev)  — track-specific baselines (DLinear, FNO, ...) -> dict
 """
 from examples.pipeline.core import transforms
-from examples.pipeline.core.encoders import Conv1dEncoder
+from examples.pipeline.core.encoders import build_encoder
 from examples.pipeline.core.metrics import default_metric
 
 
@@ -45,10 +45,8 @@ class Track:
 
     # ---- model (sensible default; override for non-1D modalities) -------------
     def build_encoder(self, cfg):
-        m = cfg.model
-        return Conv1dEncoder(in_channels=self.in_channels, hidden=m.get("hidden", 64),
-                             out_dim=m.get("out_dim", 256), depth=m.get("depth", 4),
-                             n_frames=m.get("n_frames", 8))
+        # conv | transformer, selected by cfg.model.encoder (see core/encoders.py)
+        return build_encoder(self.in_channels, cfg)
 
     # ---- eval (sensible default; override only if custom) ---------------------
     def metric(self, y_true, y_pred):

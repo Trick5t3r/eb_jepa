@@ -39,10 +39,9 @@ A track is a subclass of `tracks/base.py:Track`. Minimum:
 Optional overrides: `build_encoder` (2D/PointNet/mel), `metric` (custom), `augment`
 (SO(3) / SpecAugment / masking), `extra_baselines` (DLinear, FNO, …).
 
-- **`tracks/template_track.py`** — copy this to start; every hook is a `# TODO` with a
-  pointer to the matching reference worktree (fintime / ltsf / eeg_ssl / …).
+- **`tracks/template_track.py`** — copy this to start; every hook is a `# TODO`.
 - **`tracks/synthetic_track.py`** — a complete, runnable example on in-memory synthetic
-  data (no files needed); used for the smoke test.
+  data (no files, no track-specific solution); used for the smoke test.
 
 ## Add a track in 4 steps
 
@@ -71,3 +70,12 @@ TRACK=synthetic SSL=predictive sbatch cluster/pipeline.sbatch eval
 - `model.ssl=vicreg` — two augmented views + invariance + anti-collapse (needs only
   `represent()` and an `augment`; best for modalities with strong augmentations:
   audio, point clouds, EEG).
+
+## Choosing the backbone & predictor (by config, no code)
+
+- `model.encoder=conv` (strided Conv1d) | `transformer` (token-Transformer over
+  `n_frames` adaptive-pooled tokens). Both expose `represent()` + `frames()`.
+- `model.predictor=rnn` (autoregressive GRU roll) | `transformer` (masked-token,
+  V-JEPA-style parallel prediction) — predictive objective only.
+- Transformer knobs: `model.tf_layers`, `model.tf_heads`, `model.tf_ff`
+  (`out_dim` must be divisible by `tf_heads`).

@@ -10,12 +10,17 @@ data:
   # TODO (per track): data_root / csv / split bounds / window length, etc.
 model:
   ssl: predictive        # predictive (latent-prediction JEPA) | vicreg (two-view)
+  encoder: conv          # conv (Conv1dEncoder) | transformer (TransformerEncoder1d)
+  predictor: rnn         # rnn (GRU roll) | transformer (masked-token, V-JEPA style)
   hidden: 64
-  out_dim: 256           # latent dim D
-  depth: 4               # conv blocks (stride-2 each)
-  n_frames: 8            # latent frames (predictive only)
+  out_dim: 256           # latent dim D (transformer: must be divisible by tf_heads)
+  depth: 4               # conv blocks (stride-2 each) — conv encoder only
+  n_frames: 8            # latent frames (predictive / transformer tokens)
   n_context: 4           # context frames; predict the rest (predictive only)
-  action_dim: 8          # step-token width fed to RNNPredictor (predictive only)
+  action_dim: 8          # step-token width fed to RNNPredictor (rnn predictor)
+  tf_layers: 3           # transformer depth (encoder / predictor)
+  tf_heads: 4            # transformer attention heads
+  tf_ff: null            # transformer FFN width (null = 4*out_dim)
   ema: 0.996             # momentum for the target encoder (predictive only)
   std_coeff: 25.0        # VICReg variance hinge (anti-collapse)
   cov_coeff: 1.0         # VICReg covariance decorrelation
