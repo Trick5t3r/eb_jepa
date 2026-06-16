@@ -167,8 +167,94 @@
   \end{alertblock}
 \end{frame}
 
-\begin{frame}{Pipeline}
-    
+\begin{frame}{Pipeline — a modular, config-driven JEPA scaffold}
+  \begin{center}\small\itshape One generic engine; each track only fills a small \texttt{\#TODO} surface.\end{center}
+  \vspace{0.12cm}
+  \begin{center}
+    \resizebox{0.95\textwidth}{!}{%
+    \begin{tikzpicture}[
+      nd/.style={draw=primary, fill=primary!10, rounded corners=3pt, text width=2.3cm,
+                 minimum height=0.9cm, align=center, font=\scriptsize\bfseries, text=primary, inner sep=3pt},
+      nd2/.style={draw=secondary, fill=secondary!10, rounded corners=3pt, text width=2.3cm,
+                  minimum height=0.9cm, align=center, font=\scriptsize\bfseries, text=secondary!80!black, inner sep=3pt},
+      ar/.style={->, thick, color=primary!60}]
+      \node[nd]  (data) at (0,0)    {Track data\\\scriptsize windows};
+      \node[nd2] (enc)  at (3.2,0)  {Encoder};
+      \node[nd2] (ssl)  at (6.4,0)  {SSL JEPA};
+      \node[nd]  (pr)   at (9.8,0)  {Frozen probe\\ vs baselines};
+      \draw[ar] (data)--(enc); \draw[ar] (enc)--(ssl); \draw[ar] (ssl)--(pr);
+      \node[font=\scriptsize, text=primary!70] at (3.2,-1.0) {conv $\mid$ transformer};
+      \node[font=\scriptsize, text=primary!70] at (6.4,-1.0) {predictive $\mid$ vicreg};
+      \node[font=\scriptsize, text=primary!70, align=center] at (9.8,-1.05) {random $\mid$ supervised\\$\mid$ DLinear\,\ldots};
+    \end{tikzpicture}}
+  \end{center}
+  \vspace{0.12cm}
+  \begin{columns}[T]
+    \begin{column}{0.5\textwidth}
+      \begin{qbox}{secondary}{piprow}
+        \cardtitle{secondary}{Provided — don't touch}
+        \footnotesize
+        \qitem{Encoders: Conv1d \,/\, Transformer}
+        \qitem{Objectives: predictive JEPA \,/\, VICReg}
+        \qitem{Predictor: RNN (GRU) \,/\, Transformer}
+        \qitem{AMP trainer \,+\, probe harness \,+\, metrics}
+      \end{qbox}
+    \end{column}
+    \begin{column}{0.5\textwidth}
+      \begin{qbox}{primary}{piprow}
+        \cardtitle{primary}{You fill — the \texttt{\#TODO} surface}
+        \footnotesize
+        \qitem{\texttt{build\_pretrain\_dataset} — SSL windows}
+        \qitem{\texttt{build\_eval\_dataset} — $(x,y)$ pairs}
+        \qitem{\texttt{task\_type}, \texttt{in\_channels}}
+        \qitem{\itshape optional: encoder / metric / augment}
+      \end{qbox}
+    \end{column}
+  \end{columns}
+  \vspace{0.1cm}
+  \begin{center}\scriptsize
+    \texttt{cp template\_track.py my\_track.py} ~$\rightarrow$~ fill \texttt{\#TODO} ~$\rightarrow$~
+    \texttt{config.yaml} ~$\rightarrow$~ \texttt{cli.pretrain} / \texttt{cli.evaluate}
+  \end{center}
+\end{frame}
+
+\begin{frame}{One Pipeline, Many Tracks}
+  \begin{center}\small\itshape Same engine for every modality — a track $=$ data loaders $+$ a task declaration.\end{center}
+  \vspace{0.25cm}
+  \begin{center}\footnotesize
+  \begin{tabular}{@{}lllc@{}}
+    \toprule
+    \textbf{Track} & \textbf{SSL objective} & \textbf{Downstream} & \textbf{You write} \\
+    \midrule
+    Neuroscience (EEG)        & vicreg (two-view)        & classification probe & loader $+$ augment \\
+    Audio / speech            & vicreg (two-view)        & classification probe & loader $+$ augment \\
+    Physion (video)           & predictive (action-cond.)& forecasting / probe  & loader \\
+    Maze / Two-rooms (gen.)   & predictive (action-cond.)& planning / probe     & loader \\
+    Time series (fin.\,/\,LTSF) & predictive             & forecasting / regr.  & loader $+$ baseline \\
+    \bottomrule
+  \end{tabular}
+  \end{center}
+  \vspace{0.3cm}
+  \begin{columns}[T]
+    \begin{column}{0.5\textwidth}
+      \begin{qbox}{primary}{artrow}
+        \cardtitle{primary}{Pick \emph{predictive} when\ldots}
+        \footnotesize
+        \qitem{there is temporal / sequence structure to predict}
+        \qitem{an action or control channel is available}
+        \qitem{$\Rightarrow$ video, planning, time series}
+      \end{qbox}
+    \end{column}
+    \begin{column}{0.5\textwidth}
+      \begin{qbox}{secondary}{artrow}
+        \cardtitle{secondary}{Pick \emph{vicreg} when\ldots}
+        \footnotesize
+        \qitem{you have strong, meaning-preserving augmentations}
+        \qitem{no natural ``next step'' to predict}
+        \qitem{$\Rightarrow$ EEG, audio, point clouds}
+      \end{qbox}
+    \end{column}
+  \end{columns}
 \end{frame}
 
 \begin{frame}{What We Expect From You}
