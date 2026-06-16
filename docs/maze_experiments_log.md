@@ -2,7 +2,7 @@
 
 Journal des runs et de l'investigation du pipeline maze (branche `maze`).
 Dates en 2026. Cluster DALIA (GB200), checkpoints sous
-`/lustre/work/pdl17890/udl806719/checkpoints/ac_video_jepa/maze/`.
+`$EBJEPA_CKPTS/ac_video_jepa/maze/` (i.e. `$WORK/checkpoints/...`).
 
 ---
 
