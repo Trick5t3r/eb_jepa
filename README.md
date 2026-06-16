@@ -80,7 +80,7 @@ place: `setup.sh` **relocates itself to `/lustre/work` automatically**.
 
 ```bash
 # 1. clone anywhere (even your home) and run setup
-git clone <repo-url> eb_jepa && cd eb_jepa
+git clone https://github.com/Trick5t3r/eb_jepa.git eb_jepa && cd eb_jepa
 bash setup.sh
 #    -> the repo is copied to /lustre/work/pdl17890/$USER/eb_jepa, set up there,
 #       and the folder you cloned in is reduced to a one-line pointer README.
