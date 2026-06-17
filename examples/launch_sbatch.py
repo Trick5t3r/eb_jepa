@@ -8,6 +8,11 @@ USAGE:
 # Launch 3 seeds of a single configuration (default sweep name: sweep_YYYYMMDD_HHMM):
 python -m examples.launch_sbatch --example ac_video_jepa
 
+# Examples: image_jepa | video_jepa | ac_video_jepa (Two Rooms) | maze
+#   --example maze trains the maze world model (train_maze_aux.yaml) via the shared
+#   ac_video trainer; override with --fname for other maze/two_rooms configs.
+python -m examples.launch_sbatch --example maze
+
 # Launch 3 seeds with custom sweep name:
 python -m examples.launch_sbatch --example ac_video_jepa --sweep my_experiment
 
@@ -103,6 +108,14 @@ EXAMPLE_CONFIGS = {
     },
     "ac_video_jepa": {
         "config": "examples/ac_video_jepa/two_rooms/cfgs/train.yaml",
+        "module": "examples.ac_video_jepa.main",
+        "metric": "success_rate",
+    },
+    # maze = the AC-Video-JEPA stack on the maze env (same shared trainer,
+    # env_name=maze comes from the config). The hierarchical scripts
+    # (main_subgoal/main_cotrain/eval_subgoal) are separate CLIs, not launched here.
+    "maze": {
+        "config": "examples/ac_video_jepa/maze/cfgs/train_maze_aux.yaml",
         "module": "examples.ac_video_jepa.main",
         "metric": "success_rate",
     },
@@ -371,7 +384,7 @@ if __name__ == "__main__":
         "--example",
         type=str,
         required=True,
-        choices=["image_jepa", "video_jepa", "ac_video_jepa"],
+        choices=["image_jepa", "video_jepa", "ac_video_jepa", "maze"],
         help="Which example to run",
     )
     parser.add_argument(

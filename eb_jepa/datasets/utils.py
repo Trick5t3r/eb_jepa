@@ -77,7 +77,7 @@ def _init_gpu_stream(env_name, merged_cfg, config, chunk_size, device, dtype,
                       gen_batch_size, num_gen_workers=0):
     """Dispatch to the env-specific GPU stream pipeline."""
     if env_name == "two_rooms":
-        from eb_jepa.datasets.gpu_precomputed import init_gpu_precomputed_data
+        from eb_jepa.datasets.two_rooms.gpu_precomputed import init_gpu_precomputed_data
 
         return init_gpu_precomputed_data(
             env_config_dict=merged_cfg,

@@ -202,7 +202,7 @@ python -m examples.launch_sbatch --example image_jepa --fname examples/image_jep
 python -m examples.launch_sbatch --example image_jepa --fname examples/image_jepa/cfgs/default.yaml --use-wandb-sweep
 ```
 
-Replace `image_jepa` with `ac_video_jepa` or `video_jepa` for other examples.
+Replace `image_jepa` with `ac_video_jepa`, `video_jepa`, or `maze` for other examples.
 
 **Full Sweep Configuration:** The `--full-sweep` flag reads the `sweep.param_grid` section from the example's YAML config file (e.g., `examples/image_jepa/cfgs/default.yaml`). Without this flag, only a 3-seed sweep is launched. To customize sweep parameters, edit the `sweep` section in the config:
 
