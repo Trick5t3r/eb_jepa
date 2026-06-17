@@ -520,7 +520,7 @@ The three entry points are:
 \begin{lstlisting}[style=bash]
 python -m examples.image_jepa.main     --fname examples/image_jepa/cfgs/default.yaml
 python -m examples.video_jepa.main     --fname examples/video_jepa/cfgs/default.yaml
-python -m examples.ac_video_jepa.main  --fname examples/ac_video_jepa/cfgs/train.yaml
+python -m examples.ac_video_jepa.main  --fname examples/ac_video_jepa/two_rooms/cfgs/train.yaml
 \end{lstlisting}
 
 \begin{gotchabox}
@@ -743,7 +743,7 @@ with MPPI.
 \paragraph{Run it (train, then plan).}
 \begin{lstlisting}[style=bash]
 # Train the world model
-python -m examples.ac_video_jepa.main --fname examples/ac_video_jepa/cfgs/train.yaml
+python -m examples.ac_video_jepa.main --fname examples/ac_video_jepa/two_rooms/cfgs/train.yaml
 # Evaluate planning on a trained checkpoint (runs unroll + planning eval)
 python -m examples.ac_video_jepa.main \
     --meta.model_folder /path/to/run --meta.eval_only_mode True

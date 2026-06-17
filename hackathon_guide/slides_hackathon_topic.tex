@@ -167,8 +167,8 @@
   \end{alertblock}
 \end{frame}
 
-\begin{frame}{Pipeline — a modular, config-driven JEPA scaffold}
-  \begin{center}\small\itshape One generic engine; each track only fills a small \texttt{\#TODO} surface.\end{center}
+\begin{frame}{Pipeline — one engine: examples to reuse, tracks to complete}
+  \begin{center}\small\itshape One generic, config-driven JEPA engine. We ship complete examples \& a per-track baseline; each track only fills a small \texttt{\#TODO} surface.\end{center}
   \vspace{0.12cm}
   \begin{center}
     \resizebox{0.95\textwidth}{!}{%
@@ -192,22 +192,22 @@
   \begin{columns}[T]
     \begin{column}{0.5\textwidth}
       \begin{qbox}{secondary}{piprow}
-        \cardtitle{secondary}{Provided — don't touch}
+        \cardtitle{secondary}{Provided — study \& reuse (not tracks)}
         \footnotesize
-        \qitem{Encoders: Conv1d \,/\, Transformer}
-        \qitem{Objectives: predictive JEPA \,/\, VICReg}
-        \qitem{Predictor: RNN (GRU) \,/\, Transformer}
-        \qitem{AMP trainer \,+\, probe harness \,+\, metrics}
+        \qitem{\texttt{image\_jepa} — SSL on CIFAR-10}
+        \qitem{\texttt{video\_jepa} — Moving-MNIST prediction}
+        \qitem{\texttt{ac\_video\_jepa} — Two Rooms: world model \& planning}
+        \qitem{\itshape exploratory: \textbf{the maze} — A\textsuperscript{*}-free hierarchical navigation}
       \end{qbox}
     \end{column}
     \begin{column}{0.5\textwidth}
       \begin{qbox}{primary}{piprow}
-        \cardtitle{primary}{You fill — the \texttt{\#TODO} surface}
+        \cardtitle{primary}{Tracks — a baseline $+$ your \texttt{\#TODO}}
         \footnotesize
+        \qitem{each track ships a runnable \textbf{baseline}}
         \qitem{\texttt{build\_pretrain\_dataset} — SSL windows}
         \qitem{\texttt{build\_eval\_dataset} — $(x,y)$ pairs}
-        \qitem{\texttt{task\_type}, \texttt{in\_channels}}
-        \qitem{\itshape optional: encoder / metric / augment}
+        \qitem{\texttt{task\_type}, \texttt{in\_channels} \;{\itshape (opt: encoder / metric)}}
       \end{qbox}
     \end{column}
   \end{columns}
@@ -218,19 +218,22 @@
   \end{center}
 \end{frame}
 
-\begin{frame}{One Pipeline, Many Tracks}
-  \begin{center}\small\itshape Same engine for every modality — a track $=$ data loaders $+$ a task declaration.\end{center}
+\begin{frame}{One engine, swappable modules — all config-driven}
+  \begin{center}\small\itshape A track only declares its data \& task; every module below is provided and picked in \texttt{config.yaml}.\end{center}
   \vspace{0.25cm}
   \begin{center}\footnotesize
-  \begin{tabular}{@{}lllc@{}}
+  \begin{tabular}{@{}lll@{}}
     \toprule
-    \textbf{Track} & \textbf{SSL objective} & \textbf{Downstream} & \textbf{You write} \\
+    \textbf{Module} & \textbf{Options (config-selectable)} & \textbf{Role} \\
     \midrule
-    Neuroscience (EEG)        & vicreg (two-view)        & classification probe & loader $+$ augment \\
-    Audio / speech            & vicreg (two-view)        & classification probe & loader $+$ augment \\
-    Physion (video)           & predictive (action-cond.)& forecasting / probe  & loader \\
-    Maze / Two-rooms (gen.)   & predictive (action-cond.)& planning / probe     & loader \\
-    Time series (fin.\,/\,LTSF) & predictive             & forecasting / regr.  & loader $+$ baseline \\
+    Data interface          & track loaders — SSL windows / $(x,y)$ pairs               & feed the engine \\
+    Encoder                 & Conv1d \,$\mid$\, Transformer                              & observations $\to$ latents \\
+    SSL objective           & predictive JEPA \,$\mid$\, VICReg                          & self-supervised pretraining \\
+    Predictor / world model & RNN (GRU) \,$\mid$\, Transformer                           & action-conditioned next-latent \\
+    Planning                & MPPI \,$\mid$\, CEM                                        & goal-reaching by latent energy min. \\
+    Hierarchy {\itshape(opt.)} & subgoal predictor                                      & A\textsuperscript{*}-free hierarchical nav \\
+    Evaluation              & frozen probe vs baselines (random / supervised / DLinear) & score the representation \\
+    Trainer                 & AMP loop \,+\, metrics harness                            & shared, untouched \\
     \bottomrule
   \end{tabular}
   \end{center}
