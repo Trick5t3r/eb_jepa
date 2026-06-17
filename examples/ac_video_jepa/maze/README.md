@@ -143,7 +143,6 @@ examples/ac_video_jepa/
     eval_random.py               #   random-walk control
     plots_maze_value.py          #   baseline value-vs-distance bar chart
     README.md (this) · README_value.md · README_hierarchical.md
-docs/maze_experiments_log.md     # full chronological experiments log
 Eval/plot scripts write their outputs to whatever out_dir you pass on the CLI.
 ```
 ```bash
