@@ -119,6 +119,19 @@ EXAMPLE_CONFIGS = {
         "module": "examples.ac_video_jepa.main",
         "metric": "success_rate",
     },
+    # ---- ported PoC projects (self-contained: each has its own main.run) -------
+    "fintime": {"config": "examples/fintime/configs/train.yaml",
+                "module": "examples.fintime.main", "metric": "auroc"},
+    "ltsf": {"config": "examples/ltsf/configs/train.yaml",
+             "module": "examples.ltsf.main", "metric": "mse"},
+    "eeg": {"config": "examples/eeg/configs/train.yaml",
+            "module": "examples.eeg.main", "metric": "auroc"},
+    "audio": {"config": "examples/audio/configs/train.yaml",
+              "module": "examples.audio.main", "metric": "accuracy"},
+    "pointcloud": {"config": "examples/pointcloud/configs/train.yaml",
+                   "module": "examples.pointcloud.main", "metric": "accuracy"},
+    "gray_scott": {"config": "examples/gray_scott/configs/train.yaml",
+                   "module": "examples.gray_scott.main", "metric": "vrmse"},
 }
 
 # =============================================================================
@@ -384,7 +397,8 @@ if __name__ == "__main__":
         "--example",
         type=str,
         required=True,
-        choices=["image_jepa", "video_jepa", "ac_video_jepa", "maze"],
+        choices=["image_jepa", "video_jepa", "ac_video_jepa", "maze",
+                 "fintime", "ltsf", "eeg", "audio", "pointcloud", "gray_scott"],
         help="Which example to run",
     )
     parser.add_argument(
