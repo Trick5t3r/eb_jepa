@@ -37,6 +37,7 @@ dependencies = [
     "pymunk",
     "decord; sys_platform == 'linux' and platform_machine == 'x86_64'",
     "omegaconf",
+    "pyyaml",
     "ruamel.yaml",
 ]
 requires-python = "==3.12.*"
