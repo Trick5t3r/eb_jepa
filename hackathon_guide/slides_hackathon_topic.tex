@@ -168,9 +168,78 @@
 \end{frame}
 
 \begin{frame}{Pipeline — one engine: swappable modules}
+  \begin{center}\small\itshape One generic, config-driven JEPA engine in \texttt{eb\_jepa/}; each example just \emph{wires} swappable core modules.\end{center}
+  \vspace{0.15cm}
+  \begin{center}
+    \resizebox{0.95\textwidth}{!}{%
+    \begin{tikzpicture}[
+      nd/.style={draw=primary, fill=primary!10, rounded corners=3pt, text width=2.1cm,
+                 minimum height=0.85cm, align=center, font=\scriptsize\bfseries, text=primary, inner sep=3pt},
+      ar/.style={->, thick, color=primary!60}]
+      \node[nd] (a) at (0,0)    {Encoder};
+      \node[nd] (b) at (2.7,0)  {Predictor};
+      \node[nd] (c) at (5.4,0)  {Objective\\\scriptsize $+$ regularizer};
+      \node[nd] (d) at (8.1,0)  {Planner};
+      \node[nd] (e) at (10.8,0) {Probe\\\scriptsize vs baselines};
+      \draw[ar](a)--(b); \draw[ar](b)--(c); \draw[ar](c)--(d); \draw[ar](d)--(e);
+      \node[font=\scriptsize, text=secondary!80!black] at (4.05,-0.95)
+        {assembled by \texttt{jepa.py} — \texttt{JEPA} / \texttt{JEPAProbe} / unified \texttt{unroll()}};
+    \end{tikzpicture}}
+  \end{center}
+  \vspace{0.15cm}
+  \begin{columns}[T]
+    \begin{column}{0.5\textwidth}
+      \begin{qbox}{secondary}{orgrow}
+        \cardtitle{secondary}{Core engine — \texttt{eb\_jepa/} (swap these)}
+        \footnotesize
+        \qitem{\texttt{jepa.py} — \texttt{JEPA}/\texttt{JEPAProbe}, unified \texttt{unroll()}}
+        \qitem{\texttt{architectures.py} — encoders / predictors (ResNet, Impala, GRU)}
+        \qitem{\texttt{losses.py} — predictive JEPA \& anti-collapse (VICReg / VC / IDM)}
+        \qitem{\texttt{planning.py} — CEM \,/\, MPPI planners \& objectives}
+      \end{qbox}
+    \end{column}
+    \begin{column}{0.5\textwidth}
+      \begin{qbox}{primary}{orgrow}
+        \cardtitle{primary}{Around it — data \& assembly}
+        \footnotesize
+        \qitem{\texttt{datasets/<env>/} — loaders, dispatched by \texttt{env\_name}}
+        \qitem{\texttt{examples/<x>/} — thin scripts: \texttt{main.py} · \texttt{eval.py} · \texttt{config.yaml} · README}
+        \qitem{\texttt{launch\_sbatch.py} — one launcher (\texttt{--example}, submitit)}
+        \qitem{\texttt{tests/} lock the swappable-module contracts}
+      \end{qbox}
+    \end{column}
+  \end{columns}
+  \vspace{0.1cm}
+  \begin{center}\scriptsize\itshape Everything config-driven (\texttt{config.yaml} $+$ OmegaConf $+$ fire CLI) — change behaviour without touching the engine.\end{center}
 \end{frame}
 
 \begin{frame}{Pipeline — examples to reuse, tracks to complete, and above all: explore}
+  \begin{center}\small\itshape Reuse a complete example, complete a track baseline by filling a tiny \texttt{\#TODO} surface — then explore.\end{center}
+  \vspace{0.18cm}
+  \begin{columns}[T]
+    \begin{column}{0.5\textwidth}
+      \begin{qbox}{secondary}{exrow}
+        \cardtitle{secondary}{Reuse — complete examples}
+        \footnotesize
+        \qitem{\texttt{image\_jepa} — CIFAR-10 SSL, linear probe $\sim$91\%}
+        \qitem{\texttt{video\_jepa} — Moving-MNIST latent prediction}
+        \qitem{\texttt{ac\_video\_jepa/two\_rooms} — world model $+$ planning ($\sim$97\%)}
+        \qitem{\itshape explore: \textbf{the maze} — A\textsuperscript{*}-free hierarchical navigation}
+      \end{qbox}
+    \end{column}
+    \begin{column}{0.5\textwidth}
+      \begin{qbox}{primary}{exrow}
+        \cardtitle{primary}{Complete — 6 tracks (baseline $+$ \texttt{\#TODO})}
+        \footnotesize
+        \qitem{audio · EEG · point cloud · FinTime · LTSF · Gray-Scott}
+        \qitem{\textbf{provided \& runnable}: loader $+$ augment $+$ train loop $+$ probe harness}
+        \qitem{\textbf{you fill 3 \texttt{\#TODO} stubs}: \texttt{build\_encoder} · \texttt{build\_ssl}/\texttt{build\_jepa} · \texttt{probe}}
+        \qitem{data side is config-only: \texttt{task\_type}/\texttt{in\_channels}/\texttt{metric} preset in \texttt{data\_config.yaml}}
+      \end{qbox}
+    \end{column}
+  \end{columns}
+  \vspace{0.12cm}
+  \begin{center}\small\itshape ``Start from a baseline, then make it yours'': runnable harness $\rightarrow$ fill the stubs $\rightarrow$ your baseline $\rightarrow$ explore.\end{center}
 \end{frame}
 
 \begin{frame}{What We Expect From You}
