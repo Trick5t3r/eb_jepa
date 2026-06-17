@@ -5,7 +5,7 @@ waypoint position, and a low-level reacher picks the cardinal whose FINE-world-m
 1-step prediction (wall-aware) lands closest to that waypoint — with execution
 feedback (blocked-direction skip). A* is used nowhere at eval.
 
-Run: python -m examples.ac_video_jepa.eval_subgoal <fine_ckpt> <subgoal_ckpt>
+Run: python -m examples.ac_video_jepa.maze.eval_subgoal <fine_ckpt> <subgoal_ckpt>
         <results_dir> [num_episodes=16]
 """
 import json

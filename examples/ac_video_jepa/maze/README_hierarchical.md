@@ -50,8 +50,8 @@ The fix is a **two-level** decomposition (feudal / closed-loop subgoals):
 
 ```bash
 # train high level (frozen WM), then A*-free eval with budget+SPL+GIFs:
-sbatch scripts/maze_subgoal.sbatch 4 full 12
-sbatch scripts/maze_subgoal_eval.sbatch <fine_ckpt> <subgoal_ckpt> <out> \
+python -m examples.ac_video_jepa.maze.main_subgoal <fine_ckpt> <out_dir> 4 12
+python -m examples.ac_video_jepa.maze.eval_subgoal <fine_ckpt> <out_dir>/subgoal.pth.tar <out_dir> \
        32 4 0.05 32 4 10     # num_ep, lookahead K, revisit_pen, n_gifs, budget_factor, margin
 ```
 
@@ -94,5 +94,5 @@ co-train (enc_lr 2e-4, 1-step planner) collapsed to 12.5 %; the **repaired** ver
 the **frozen WM** config. Lesson: **the wall-aware world model is too precious to
 move — freeze it and invest in the planner.**
 
-GIFs of A*-free navigation: `results/maze_subgoal_best_budget/ep*_succ.gif` (+ fails).
-JSON metrics: `results/maze_subgoal_best_budget/subgoal_eval.json`.
+`eval_subgoal.py` writes per-episode GIFs of A*-free navigation (`<out_dir>/ep*_succ.gif`,
+plus failures) and JSON metrics (`<out_dir>/subgoal_eval.json`) into the `out_dir` you pass.

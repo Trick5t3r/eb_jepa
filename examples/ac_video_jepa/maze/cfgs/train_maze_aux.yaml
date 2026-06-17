@@ -67,5 +67,5 @@ optim:
   grad_clip_pred: 2.0
   weight_decay: 1.e-5
 eval:
-  plan_cfg_path: examples/ac_video_jepa/cfgs/planning_mppi_probe_prior_wp2_pl4.yaml
-  eval_cfg_path: examples/ac_video_jepa/cfgs/eval_maze_short.yaml
+  plan_cfg_path: examples/ac_video_jepa/maze/cfgs/planning_mppi_probe_prior_wp2_pl4.yaml
+  eval_cfg_path: examples/ac_video_jepa/maze/cfgs/eval_maze_short.yaml

@@ -21,6 +21,26 @@ decision loop. Everything is selected by config flags (see §6, *modular feature
 
 ---
 
+## Entry points — which `main` to run
+
+The maze use-case has **three training entry points** (one shared + two maze-specific) and
+**three evals**. Everything is `python -m <module>`; checkpoints and `out_dir`s are your choice.
+
+| kind | `python -m …` | role | key args |
+|---|---|---|---|
+| **train** | `examples.ac_video_jepa.main` | **fine world model** — the base maze WM (shared trainer, `env_name: maze`) | `--fname examples/ac_video_jepa/maze/cfgs/train_maze_aux.yaml --meta.model_folder=<dir>` |
+| **train** | `examples.ac_video_jepa.maze.main_subgoal` | **Level 1** — train the `SubgoalPredictor` (A\*-free high level), WM frozen | `<fine_ckpt> <out_dir> <N> <epochs>` |
+| **train** | `examples.ac_video_jepa.maze.main_cotrain` | **Level 2** — co-train both levels on a shared latent | `<fine_ckpt> <subgoal_ckpt> <out_dir> <N> <epochs> <freeze_ep> <enc_lr>` |
+| eval | `examples.ac_video_jepa.main` *(+`--meta.eval_only_mode=True`)* | **baseline planning** eval of the fine WM (MPPI + chosen objective) | `--fname … --eval.plan_cfg_path=… --eval.eval_cfg_path=…` |
+| eval | `examples.ac_video_jepa.maze.eval_subgoal` | **A\*-free** closed-loop eval (Levels 1 & 2; SPL + GIFs) | `<fine_ckpt> <subgoal_ckpt> <out_dir> <num_ep> <lookahead> <revisit_pen> <n_gifs> <budget_factor> <margin>` |
+| eval | `examples.ac_video_jepa.maze.eval_random` | random-walk **control** baseline (sanity floor) | `<fine_ckpt> <out_dir> <num_ep> <budget_factor> <margin>` |
+
+**Pipeline:** `main` (fine WM) → `main_subgoal` (L1) → *optionally* `main_cotrain` (L2), each
+followed by `eval_subgoal`. Steps are detailed in §2–§6 below. (`plots_maze_value.py` just
+renders the baseline value-vs-distance chart.)
+
+---
+
 ## 1. Data — generated **online** (no download)
 Each episode is a fresh random maze: a DFS generator builds the walls, **A\* solves
 the shortest path** start→goal, and the path (with `wall_bump_prob` collisions, so
@@ -36,7 +56,7 @@ position probe). The three keys that made maze planning work: **snap** actions t
 the grid, an **aux-position** loss (`aux_pos_coeff`) so the latent is
 position-decodable, and **`wall_bump_prob`** so the model learns collisions.
 ```bash
-python -m examples.ac_video_jepa.main examples/ac_video_jepa/cfgs/train_maze_aux.yaml \
+python -m examples.ac_video_jepa.main --fname examples/ac_video_jepa/maze/cfgs/train_maze_aux.yaml \
     --meta.model_folder=$EBJEPA_CKPTS/maze/exp_value
 ```
 Configs: `train_maze.yaml` (base), `train_maze_aux.yaml` (proven, aux-pos),
@@ -46,10 +66,10 @@ Configs: `train_maze.yaml` (base), `train_maze_aux.yaml` (proven, aux-pos),
 Eval-only mode loads a checkpoint and runs the MPPI planner with a chosen
 **objective** (the planning cost) and **eval** config:
 ```bash
-python -m examples.ac_video_jepa.main examples/ac_video_jepa/cfgs/train_maze_value.yaml \
+python -m examples.ac_video_jepa.main --fname examples/ac_video_jepa/maze/cfgs/train_maze_value.yaml \
     --meta.load_model=True --meta.eval_only_mode=True --meta.skip_unroll_eval=True \
-    --eval.plan_cfg_path=examples/ac_video_jepa/cfgs/planning_mppi_value_wp2_pl4.yaml \
-    --eval.eval_cfg_path=examples/ac_video_jepa/cfgs/eval_maze_med.yaml
+    --eval.plan_cfg_path=examples/ac_video_jepa/maze/cfgs/planning_mppi_value_wp2_pl4.yaml \
+    --eval.eval_cfg_path=examples/ac_video_jepa/maze/cfgs/eval_maze_med.yaml
 ```
 
 ## 4. Baseline — planning with A\* waypoints (swappable cost)
@@ -73,9 +93,9 @@ python -m examples.ac_video_jepa.maze.eval_subgoal  <fine_ckpt> <out_dir>/subgoa
 Result: **65.6 % success / SPL 0.62**, A\*-free. → **`README_hierarchical.md`**.
 
 <p align="center">
-  <img src="../../../results/maze_subgoal_best_budget/example_success.gif" width="200" alt="A*-free maze solve"><br>
-  <em>A*-free navigation: the agent reaches the goal with no A* in the decision loop
-  (learned subgoals + lookahead reacher).</em>
+  <em>Running <code>eval_subgoal.py</code> with <code>n_gifs &gt; 0</code> writes per-episode GIFs of
+  A*-free navigation into your <code>out_dir</code> — the agent reaches the goal with no A* in the
+  decision loop (learned subgoals + lookahead reacher).</em>
 </p>
 
 ## 6. Level 2 — hierarchization (co-training)
@@ -97,7 +117,8 @@ moving the encoder erodes the fragile wall-aware fine WM the low level relies on
 | maze geometry | `maze_height/width`, `cell_size`, `min_path_length`, `wall_bump_prob` | `cfgs/train_maze*.yaml`, `data_config.yaml` |
 | planning cost | `planning_objective.objective_type` ∈ {`repr_dist`,`probe_pos`,`learned_value`} | `cfgs/planning_*.yaml` → `objective_name_map` |
 | TD-MPC value head | `value_coeff`, `value_gamma`, `value_lr`, `freeze_world_model` | `main.py` |
-| aux-position / action-snap / waypoints | `aux_pos_coeff`, `snap_actions_to_grid`, `waypoint_mode` | `main.py`, `cfgs/planning_*.yaml` |
+| aux-position | `aux_pos_coeff` | `main.py`, `cfgs/train_maze*.yaml` |
+| action-snap / waypoints | `snap_actions_to_grid`, `waypoint_mode` | `eb_jepa/planning.py`, `cfgs/planning_*.yaml` |
 | subgoal horizon | `N` (cells ahead) | `main_subgoal.py` arg |
 | low-level reacher | `lookahead K`, `revisit_pen` | `eval_subgoal.py` args |
 | eval step budget | `budget_factor`·A\* + `margin` (A\* sizes the clock only) | `eval_subgoal.py` args |
@@ -112,19 +133,18 @@ eb_jepa/
   hierarchical.py                # SubgoalPredictor (high level) + fine_kstep_target (lookahead)
 examples/ac_video_jepa/
   main.py / eval.py              # SHARED trainer/eval (env-selected: two_rooms | maze)
-  cfgs/                          # SHARED configs (train_maze*, eval_maze*, planning_*; planning_mppi.yaml is shared with Two Rooms)
+  two_rooms/                     # Two Rooms: cfgs/ + README + assets
   maze/                          # <- this folder (everything maze-specific)
+    cfgs/                        #   train_maze*, eval_maze*, planning_mppi_*
+                                 #   (base planning_mppi.yaml lives in two_rooms/cfgs/)
     maze_fine_wm.py              #   build_fine(): rebuild frozen fine WM for inference
     main_subgoal.py / eval_subgoal.py   # Level 1: A*-free subgoal nav (+ SPL, GIFs)
     main_cotrain.py              #   Level 2: co-training (shared latent)
     eval_random.py               #   random-walk control
     plots_maze_value.py          #   baseline value-vs-distance bar chart
     README.md (this) · README_value.md · README_hierarchical.md
-  two_rooms/                     # Two Rooms README + assets
 docs/maze_experiments_log.md     # full chronological experiments log
-docs/maze_experiments_log.md     # full chronological experiments log
-results/  maze_value/ · maze_subgoal_best_budget/ · maze_cotrain_best_budget/
-          maze_random_baseline/ · maze_hierarchical/   # results.json + plots + GIFs
+Eval/plot scripts write their outputs to whatever out_dir you pass on the CLI.
 ```
 ```bash
 # random control (same budget) — sanity floor

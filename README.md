@@ -7,7 +7,7 @@
 </h2>
 
 <div align="center" style="line-height: 1;">
-  <a href="https://github.com/facebookresearch/eb_jepa" target="_blank" style="margin: 2px;"><img alt="Github" src="https://img.shields.io/badge/Github-facebookresearch/eb__jepa-black?logo=github" style="display: inline-block; vertical-align: middle;"/></a>
+  <a href="https://github.com/Trick5t3r/eb_jepa" target="_blank" style="margin: 2px;"><img alt="Github" src="https://img.shields.io/badge/Github-Trick5t3r/eb__jepa-black?logo=github" style="display: inline-block; vertical-align: middle;"/></a>
   <a href="https://arxiv.org/abs/2602.03604" target="_blank" style="margin: 2px;"><img alt="ArXiv" src="https://img.shields.io/badge/arXiv-2602.03604-b5212f?logo=arxiv" style="display: inline-block; vertical-align: middle;"/></a>
 </div>
 
@@ -65,14 +65,50 @@ JEPA for world modeling + planning in Two Rooms environment.
 
 | Planning Episode | Task Definition |
 |------------------|-----------------|
-| <img src="examples/ac_video_jepa/assets/top_randw_agent_steps_succ.gif" alt="Successful planning episode" width="155" /> | <img src="examples/ac_video_jepa/assets/top_randw_state.png" alt="Episode task definition" width="300" /> |
+| <img src="examples/ac_video_jepa/two_rooms/assets/top_randw_agent_steps_succ.gif" alt="Successful planning episode" width="155" /> | <img src="examples/ac_video_jepa/two_rooms/assets/top_randw_state.png" alt="Episode task definition" width="300" /> |
 | *Successful planning episode* | *From init to goal state* |
 
 ---
 
 ## 🚀 Installation
 
-### HTW cluster — quick start
+### Local / generic (start here)
+
+We use [uv](https://docs.astral.sh/uv/guides/projects/) for package management.
+
+```bash
+# Install dependencies
+uv sync
+# Option 1: Activate virtual environment
+source .venv/bin/activate
+python -m examples.image_jepa.main
+# Option 2: Run directly with uv
+uv run python -m examples.image_jepa.main
+```
+If you need conda-specific packages, you can use **Conda + uv**
+
+```bash
+# Create conda environment with Python 3.12
+conda create -n eb_jepa python=3.12 -y
+conda activate eb_jepa
+# Install package in editable mode with dev dependencies (pytest, black, isort, autoflake)
+uv pip install -e . --group dev
+```
+
+Add these to your `~/.bashrc` for persistent configuration.
+
+```bash
+# Where datasets are stored / looked up
+export EBJEPA_DSETS=/path/to/eb_jepa/datasets
+# Optional: Directory for checkpoints and logs
+export EBJEPA_CKPTS=/path/to/checkpoints
+```
+
+Verify the install with `uv run pytest tests/`.
+
+### HTW cluster — quick start (optional, hackathon only)
+
+> Skip this section unless you are on the HTW hackathon cluster — the generic install above is all you need locally.
 
 **Everything must live on `/lustre/work`, not your home** — the `/lustre/home` quota is
 small and blocks git, venvs and model downloads. You don't have to clone in the right
@@ -94,41 +130,9 @@ sbatch slurm_test.sh        # runs pytest on a GPU node
 ```
 
 `env.sh` derives everything from `$USER`, keeps **all** caches (uv, HuggingFace, torch,
-triton/`torch.compile`, pip, W&B) under `$WORK/.cache` — nothing touches home — and points
-`EBJEPA_DSETS` at the **shared dataset folder** provided for everyone. Override the work
-root with `export EBJEPA_WORK=/your/path` before running setup.
-
-### Local / generic
-
-We use [uv](https://docs.astral.sh/uv/guides/projects/) for package management.
-
-```bash
-# Install dependencies
-uv sync
-# Option 1: Activate virtual environment
-source .venv/bin/activate
-python main.py
-# Option 2: Run directly with uv
-uv run python main.py
-```
-If you need conda-specific packages, you can use **Conda + uv**
-
-```bash
-# Create conda environment with Python 3.12
-conda create -n eb_jepa python=3.12 -y
-conda activate eb_jepa
-# Install package in editable mode with dev dependencies (pytest, black, isort)
-uv pip install -e . --group dev
-```
-
-Add these to your `~/.bashrc` for persistent configuration.
-
-```bash
-# Required for SLURM jobs to find datasets
-export EBJEPA_DSETS=/path/to/eb_jepa/datasets
-# Optional: Directory for checkpoints and logs
-export EBJEPA_CKPTS=/path/to/checkpoints
-```
+triton/`torch.compile`, pip, W&B) under `$WORK/.cache` — nothing touches home. Override the work
+root with `export EBJEPA_WORK=/your/path` before running setup, and set `EBJEPA_DSETS` to your
+dataset folder.
 
 
 

@@ -19,7 +19,7 @@ VRAM is abundant (185 GB per GPU). The bottleneck is almost never the model itse
 Concrete checklist before launching a long run:
 
 1. **Disable in-training evals.** Plan evals are expensive (~20 min each on two_rooms). Run them as a separate job after training.
-2. **Use AMP.** `bfloat16` halves memory bandwidth and speeds up matmuls on B200 with no loss in training quality.
+2. **Use AMP.** `bfloat16` halves memory bandwidth and speeds up matmuls on GB200 with no loss in training quality.
 3. **Compile the model.** `torch.compile` reduces Python overhead on the training loop. `mode=reduce-overhead` enables cudagraphs for an additional ~20% speedup.
 4. **Saturate the DataLoader.** Use enough workers and a prefetch queue so the GPU never idles waiting for the next batch.
 5. **Use pinned memory + non-blocking transfers.** With `pin_mem: true`, CPU→GPU copies overlap with the previous forward pass.
@@ -28,7 +28,7 @@ Concrete checklist before launching a long run:
 
 ## Training configs
 
-Two configs are provided in `examples/ac_video_jepa/cfgs/`:
+Two configs are provided in `examples/ac_video_jepa/two_rooms/cfgs/`:
 
 | Config | Purpose |
 |--------|---------|
@@ -53,18 +53,27 @@ All model hyperparameters (architecture, regularizer, optimizer, scheduler) are 
 
 ## Typical workflow
 
+All SLURM submission goes through the unified launcher `examples/launch_sbatch.py`
+(submitit) — it snapshots the code, handles seeds/sweeps/wandb, and accepts cluster
+overrides (`--partition/--account/--cpus-per-task/--time-min/--gpus-per-node`).
+
 ```
 1. Prototype locally (small config, few steps, no SLURM)
-   python -m examples.ac_video_jepa.main fname=cfgs/train.yaml optim.epochs=1
+   python -m examples.ac_video_jepa.main --fname examples/ac_video_jepa/two_rooms/cfgs/train.yaml --optim.epochs 1
 
-2. Smoke-test on cluster (1 epoch, check loss decreases, check GPU utilisation)
-   sbatch cluster/train.sbatch
+2. Smoke-test on the cluster (single job, check loss decreases + GPU utilisation)
+   python -m examples.launch_sbatch --example ac_video_jepa --single
 
-3. Full training run
-   sbatch cluster/train.sbatch  # uses train_ex_reduction_of_walltime.yaml
+3. Full training run (3-seed sweep, auto-named)
+   python -m examples.launch_sbatch --example ac_video_jepa \
+       --fname examples/ac_video_jepa/two_rooms/cfgs/train_ex_reduction_of_walltime.yaml
 
-4. Eval (separate job, after training)
-   sbatch cluster/eval.sbatch   # points at the checkpoint produced in step 3
+4. Eval — re-run on the produced checkpoint, eval-only (separate job).
+   Pass the TRAIN config (it carries the model/optim sections + points eval_cfg_path at
+   eval.yaml); eval.yaml is a fragment consumed via cfg.eval, not a top-level --fname.
+   python -m examples.launch_sbatch --example ac_video_jepa --single \
+       --fname examples/ac_video_jepa/two_rooms/cfgs/train.yaml \
+       --meta.eval_only_mode True --meta.model_folder <ckpt_dir_from_step_3>
 ```
 
 Check GPU utilisation mid-run with:
@@ -73,4 +82,4 @@ gpus        # per-node GPU allocation
 log -f      # tail the running job's stdout
 ```
 
-A healthy run shows the GPU busy >80% of the time. If it is lower, the bottleneck is the data pipeline — see `examples/ac_video_jepa/cfgs/data/` for faster pipeline options.
+A healthy run shows the GPU busy >80% of the time. If it is lower, the bottleneck is the data pipeline — see `examples/ac_video_jepa/two_rooms/cfgs/data/` for faster pipeline options.

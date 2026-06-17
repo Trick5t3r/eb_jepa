@@ -1,13 +1,12 @@
-# Exp B — bigger model (32 -> 128) on the full 21x21 maze.
-# Goal: test whether the 0% success is a representation-capacity bottleneck
-# (32-dim latent too small to encode maze topology + agent position).
-# Only the model width changes vs train_maze.yaml.
+# Exp A — small maze (11x11) sanity test, SAME small model (32-dim) as train_maze.yaml.
+# Goal: isolate whether the 0% success is the planning algorithm vs model capacity.
+# Only the maze geometry changes (single-variable): 21x21 -> 11x11, img 63 -> 33.
 logging:
   log_wandb: true
   wandb_group:
   wandb_sweep:
   log_every: 10
-  exp_suffix: maze_big
+  exp_suffix: maze_small
   save_every_n_epochs: 1
   tqdm_silent: false
 meta:
@@ -19,6 +18,10 @@ meta:
   seed: 1
 data:
   env_name: maze
+  maze_height: 11
+  maze_width: 11
+  cell_size: 3
+  img_size: 33          # = maze_height * cell_size (NOT auto-recomputed)
   batch_size: 384
   num_workers: 16
   pin_mem: true
@@ -30,9 +33,9 @@ model:
   compile: true
   compile_mode: reduce-overhead
   dobs: 2
-  henc: 128
-  hpre: 128
-  dstc: 128
+  henc: 32
+  hpre: 32
+  dstc: 32
   nsteps: 8
   encoder_architecture: impala
   train_rollout: last
@@ -55,5 +58,5 @@ optim:
   grad_clip_pred: 2.0
   weight_decay: 1.e-5
 eval:
-  plan_cfg_path: examples/ac_video_jepa/cfgs/planning_mppi.yaml
-  eval_cfg_path: examples/ac_video_jepa/cfgs/eval_maze_bounded.yaml
+  plan_cfg_path: examples/ac_video_jepa/two_rooms/cfgs/planning_mppi.yaml
+  eval_cfg_path: examples/ac_video_jepa/maze/cfgs/eval_maze_small.yaml

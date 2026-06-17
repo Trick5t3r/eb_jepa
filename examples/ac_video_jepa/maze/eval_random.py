@@ -5,7 +5,7 @@ direction WHEN the move hits a wall (agent didn't move). Same difficulty-
 proportional budget (factor*len(A*)+margin) and same metrics (success + SPL), so
 it is directly comparable to the learned hierarchical agent.
 
-Run: python -m examples.ac_video_jepa.eval_random <fine_ckpt_for_cfg> <res> [num_ep=32] [factor=4] [margin=10] [seed=0]
+Run: python -m examples.ac_video_jepa.maze.eval_random <fine_ckpt_for_cfg> <res> [num_ep=32] [factor=4] [margin=10] [seed=0]
 """
 import json
 import os

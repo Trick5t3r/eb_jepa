@@ -66,7 +66,7 @@ Shows a per-node table for all 18 `dalianvl` nodes:
 
 | Column | Meaning |
 |--------|---------|
-| TOT | Total GPUs on the node (always 4 × B200) |
+| TOT | Total GPUs on the node (always 4 × GB200) |
 | USED | Currently allocated |
 | FREE | Available |
 | STATE | SLURM node state (idle / mixed / allocated / drained) |

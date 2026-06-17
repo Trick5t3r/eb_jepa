@@ -32,7 +32,7 @@ Both are hand-crafted. The TD-MPC answer: **learn** the cost-to-go.
 | `examples/ac_video_jepa/main.py` | TD(0) training of the value head on the model's **own autoregressive rollouts** (EMA target net; reward 1 at the goal; regressed on both real and imagined latents). Gated by `value_coeff`; `freeze_world_model` trains *only* the value head on a proven frozen world model |
 | `examples/ac_video_jepa/eval.py` | `value_head` passed into `main_eval` → `GCAgent` |
 | `cfgs/` | `train_maze_value.yaml` + `planning_mppi_value_{greedy,wp1,wp2_pl4}.yaml` |
-| `plots_maze_value.py`, `results/maze_value/` | comparison plot + `results.json` |
+| `plots_maze_value.py` | comparison plot + `results.json` (written to the `out_dir` you pass) |
 
 ### The value head (TD-MPC style)
 
@@ -59,12 +59,20 @@ identical MPPI settings and the same 16 held-out 21×21 mazes
 (`eval_maze_med`, `n_allowed_steps=180`), changing **only the planning objective**.
 
 ```bash
-sbatch scripts/train_maze_value.sbatch full          # train the value head (frozen WM)
-sbatch scripts/eval_maze_value_wp2.sbatch            # value vs probe @ tuned wp2
-python -m examples.ac_video_jepa.maze.plots_maze_value results/maze_value
+# 1. train the value head on the frozen WM (init from the proven aux-pos checkpoint)
+python -m examples.ac_video_jepa.main examples/ac_video_jepa/maze/cfgs/train_maze_value.yaml \
+    --meta.init_from=<exp_aux_pos_ckpt> --meta.model_folder=<out_dir>
+# 2. value vs probe @ tuned wp2 (eval-only planning)
+python -m examples.ac_video_jepa.main examples/ac_video_jepa/maze/cfgs/train_maze_value.yaml \
+    --meta.load_model=True --meta.eval_only_mode=True --meta.skip_unroll_eval=True \
+    --meta.model_folder=<out_dir> \
+    --eval.plan_cfg_path=examples/ac_video_jepa/maze/cfgs/planning_mppi_value_wp2_pl4.yaml \
+    --eval.eval_cfg_path=examples/ac_video_jepa/maze/cfgs/eval_maze_med.yaml
+# 3. comparison plot (reads/writes your out_dir)
+python -m examples.ac_video_jepa.maze.plots_maze_value <out_dir>
 ```
 
-## Results (`results/maze_value/maze_value_compare.png`)
+## Results (plot written to `<out_dir>/maze_value_compare.png` by `plots_maze_value.py`)
 
 | planning regime | **learned VALUE** | probe_pos (distance) | repr_dist (latent MSE) |
 |---|---|---|---|

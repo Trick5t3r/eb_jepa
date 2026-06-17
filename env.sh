@@ -37,9 +37,9 @@ export WANDB_CACHE_DIR=$WORK/.cache/wandb
 
 # EB-JEPA paths
 export EBJEPA_CKPTS=${EBJEPA_CKPTS:-$WORK/checkpoints}
-# Shared, read-only dataset folder for ALL students (provided datasets live here).
-# Override with EBJEPA_DSETS if you keep your own copy elsewhere.
-export EBJEPA_DSETS=${EBJEPA_DSETS:-/lustre/work/pdl17890/udl806719/datasets}
+# Dataset folder. Defaults to your own $WORK/datasets; set EBJEPA_DSETS to point at
+# a shared/provided dataset folder if one is available on your cluster.
+export EBJEPA_DSETS=${EBJEPA_DSETS:-$WORK/datasets}
 
 # W&B: export WANDB_DISABLED=true before sourcing to turn off logging cluster-wide
 export WANDB_DISABLED=${WANDB_DISABLED:-false}

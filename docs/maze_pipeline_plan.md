@@ -88,8 +88,8 @@ def env_creator():
 Add `create_env(env_name, config, **kwargs)` helper to `utils.py`.
 
 ### New config files
-- `examples/ac_video_jepa/cfgs/train_maze.yaml` — same model/optim as `train.yaml` but `env_name=maze`, `dobs=2`, `img_size` implicit from `data_config.yaml`
-- `examples/ac_video_jepa/cfgs/eval_maze.yaml` — `env_name=maze`, `n_allowed_steps=200`
+- `examples/ac_video_jepa/maze/cfgs/train_maze.yaml` — same model/optim as `train.yaml` but `env_name=maze`, `dobs=2`, `img_size` implicit from `data_config.yaml`
+- `examples/ac_video_jepa/maze/cfgs/eval_maze.yaml` — `env_name=maze`, `n_allowed_steps=200`
 
 ---
 

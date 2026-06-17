@@ -1,4 +1,4 @@
-## Self-Supervised Representation Learning from Unlabeled Images
+# Self-Supervised Representation Learning from Unlabeled Images
 
 This example demonstrates how to train a Joint Embedding Predictive Architecture (JEPA) on unlabeled images. More precisely, methods studied here are JEAs as there is no predictor. The model learns representations from individual frames of the CIFAR 10 dataset and is evaluated using linear probing for image classification.
 

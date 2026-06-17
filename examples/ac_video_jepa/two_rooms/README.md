@@ -76,7 +76,7 @@ We study two setups:
 ```bash
 # Train a model locally
 python -m examples.ac_video_jepa.main \
-  --fname examples/ac_video_jepa/cfgs/train.yaml
+  --fname examples/ac_video_jepa/two_rooms/cfgs/train.yaml
 
 # Launch 3 seeds with automatic wandb averaging (recommended)
 python -m examples.launch_sbatch --example ac_video_jepa
@@ -85,7 +85,7 @@ python -m examples.launch_sbatch --example ac_video_jepa
 python -m examples.launch_sbatch --example ac_video_jepa --sweep my_experiment
 ```
 
-See the main [README](../../README.md) for wandb seed averaging and sweep UI instructions.
+See the main [README](../../../README.md) for wandb seed averaging and sweep UI instructions.
 
 ```bash
 # Run planning evaluation of a trained model
@@ -138,7 +138,7 @@ We use either of the below population-based optimizers to find $a$ that minimize
 ## Results
 We consider the fixed wall training setup to be solved as we get 98% success when evaluating on the same wall setup. Hence, we focus on the results on the Random Wall, and **only display results on the Random Wall task in the below sections**.
 
-Our **best model** is trained with the **Impala-RNN** architecture on Random Wall, without projectors before applying the regularization losses, and with the following losses coefficients $(\beta, \alpha, \delta, \omega) = (8, 16, 12, 1)$. The other training hyperparameters are specified in `examples/ac_video_jepa/cfgs/train.yaml` and the planning hyperparameters are in `eb_jepa/planning_mppi.yaml`.
+Our **best model** is trained with the **Impala-RNN** architecture on Random Wall, without projectors before applying the regularization losses, and with the following losses coefficients $(\beta, \alpha, \delta, \omega) = (8, 16, 12, 1)$. The other training hyperparameters are specified in `examples/ac_video_jepa/two_rooms/cfgs/train.yaml` and the planning hyperparameters are in `examples/ac_video_jepa/two_rooms/cfgs/planning_mppi.yaml`.
 ### Unrolling
 The unrolling of 90 actions by our best model is illustrated in the below figure. We display a batch of four trajectories. For each  trajectory, we have four columns:
 1. **GT**: The first column is the trajectory sampled from the dataset.
@@ -194,7 +194,7 @@ Key insights:
 
 
 ### Planning optimizer
-In the below table, we also compare planning optimizers in terms of success rate and planning time, with the same hyperparameters, specified in `eb_jepa/planning_mppi.yaml` and `eb_jepa/planning_cem.yaml`, and our best Impala model, specified in `examples/ac_video_jepa/cfgs/train.yaml`.
+In the below table, we also compare planning optimizers in terms of success rate and planning time, with the same hyperparameters, specified in `examples/ac_video_jepa/two_rooms/cfgs/planning_mppi.yaml` and `examples/ac_video_jepa/two_rooms/cfgs/planning_cem.yaml`, and our best Impala model, specified in `examples/ac_video_jepa/two_rooms/cfgs/train.yaml`.
 
 | Model Architecture | Planner | SR (%) | Episode time (s) |
 |-------------------|---------------|------------------|----|
@@ -211,9 +211,9 @@ Key insights:
 We encourage to use the extensive integration of wandb logging in this `ac_video_jepa` example.
 To reproduce the below plot, launch a full hyperparameter sweep with the `--full-sweep` flag:
 ```
-python -m examples.ac_video_jepa.launch_sbatch \
+python -m examples.launch_sbatch \
   --sweep <experiment_name> \
-  --fname examples/ac_video_jepa/cfgs/train.yaml \
+  --fname examples/ac_video_jepa/two_rooms/cfgs/train.yaml \
   --full-sweep \
   --use-wandb-sweep
 ```

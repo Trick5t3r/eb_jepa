@@ -275,7 +275,7 @@ Les trois ingrédients sont requis. Tuning du `spacing` en cours (jobs 70149-701
 Remplacement du coût « distance-dans-le-latent » par une **value apprise**
 `V(z, z_goal)` (TD-MPC ; Hansen et al.) entraînée par **TD(0) sur les rollouts du
 world-model lui-même** (target net EMA, reward 1 à l'arrivée, régression sur
-latents réels + imaginés). Voir `examples/ac_video_jepa/README_maze_value.md`.
+latents réels + imaginés). Voir `examples/ac_video_jepa/maze/README_value.md`.
 
 - **`GoalValueHead`** (`state_decoder.py`), **`LearnedValueMPCObjective`**
   (`planning.py`, `objective_type: learned_value`, coût = `1 − V`), entraînement

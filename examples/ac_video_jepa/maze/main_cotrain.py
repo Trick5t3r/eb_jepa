@@ -10,7 +10,7 @@ Losses (all backprop into the shared encoder), low LR on enc/predictor:
   subgoal          MSE to the A* waypoint N ahead (the routing signal)
 The fine value is NOT used by the subgoal eval, so it is omitted here.
 
-Run: python -m examples.ac_video_jepa.main_cotrain <fine_ckpt> <subgoal_ckpt> <out_dir>
+Run: python -m examples.ac_video_jepa.maze.main_cotrain <fine_ckpt> <subgoal_ckpt> <out_dir>
         [N=4] [epochs=8]
 """
 import os

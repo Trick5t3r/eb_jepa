@@ -90,10 +90,10 @@ disk (e.g. Lustre). No online generation overhead during training.
 **Step 1 — generate the dataset (once):**
 
 ```bash
-python -m eb_jepa.datasets.two_rooms.gpu_generator \
-  --out_dir /path/to/dataset \
-  --n_samples 1200000 \
-  --env_name two_rooms
+python -m eb_jepa.datasets.two_rooms.offline_dataset \
+  --data-dir /path/to/dataset \
+  --num-samples 1200000 \
+  --backend gpu
 ```
 
 **Step 2 — train** with `pipeline.mode: offline` and `data_dir` pointing at the output.

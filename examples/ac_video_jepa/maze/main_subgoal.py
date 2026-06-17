@@ -6,7 +6,7 @@ trajectories (label = the A* position N frames ahead). The fine world model +
 encoder + probe are frozen. At eval (eval_subgoal.py) the predictor proposes the
 waypoints and a low-level reacher follows them — NO A* at eval.
 
-Run: python -m examples.ac_video_jepa.main_subgoal <fine_ckpt> <out_dir> [N=4] [epochs=12]
+Run: python -m examples.ac_video_jepa.maze.main_subgoal <fine_ckpt> <out_dir> [N=4] [epochs=12]
 """
 import os
 import sys

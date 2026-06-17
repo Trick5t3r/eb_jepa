@@ -1,4 +1,4 @@
-# Learned-VALUE planning WITH A* waypoints (spacing=1) + action prior + snap —
+# Learned-VALUE planning WITH A* waypoints (spacing=2) + action prior + snap —
 # the success-oriented config, mirroring planning_mppi_probe_prior_wp1_pl4.yaml
 # but with the TD-MPC learned value as the MPC cost instead of probe_pos.
 # Lets us compare value-vs-probe under the SAME (proven) planner scaffolding.

@@ -2,7 +2,7 @@
 geometric distance costs (probe_pos, repr_dist), grouped by planning regime.
 Reads results/maze_value/results.json.
 
-Usage: python -m examples.ac_video_jepa.plots_maze_value <results_dir>
+Usage: python -m examples.ac_video_jepa.maze.plots_maze_value <results_dir>
 """
 import json
 import os

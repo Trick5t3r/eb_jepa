@@ -36,7 +36,7 @@ Voir aussi `maze_experiments_log.md` §9–§10 (cause racine).
     position-décodée-par-probe ↔ cible (waypoint).
   - `ReprDistCollisionMPCObjective` (`repr_dist_collision`) — repr_dist + pénalité mur (abandonné, 0%).
   - waypoints + `stop_on_success` dans `main_eval` ; `_diagnose_world_model` (diag 1-pas).
-- Configs : `examples/ac_video_jepa/cfgs/planning_mppi_*.yaml`,
+- Configs : `examples/ac_video_jepa/maze/cfgs/planning_mppi_*.yaml`,
   `eval_maze_short.yaml` (12 ép./140), `eval_maze_med.yaml` (16 ép./180).
 - sbatch générique : `scripts/eval_maze_planning.sbatch <plan_cfg> <suffix> [eval_cfg]`.
 

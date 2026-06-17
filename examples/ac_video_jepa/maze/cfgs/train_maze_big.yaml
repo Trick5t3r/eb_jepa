@@ -1,13 +1,13 @@
-# Training config for the maze environment.
-# Same architecture/optimizer as train.yaml; only the data section differs
-# (env_name=maze and the data pipeline now defaults to the small ``maze``
-# image size of 63x63).
+# Exp B — bigger model (32 -> 128) on the full 21x21 maze.
+# Goal: test whether the 0% success is a representation-capacity bottleneck
+# (32-dim latent too small to encode maze topology + agent position).
+# Only the model width changes vs train_maze.yaml.
 logging:
   log_wandb: true
   wandb_group:
   wandb_sweep:
   log_every: 10
-  exp_suffix: maze
+  exp_suffix: maze_big
   save_every_n_epochs: 1
   tqdm_silent: false
 meta:
@@ -30,9 +30,9 @@ model:
   compile: true
   compile_mode: reduce-overhead
   dobs: 2
-  henc: 32
-  hpre: 32
-  dstc: 32
+  henc: 128
+  hpre: 128
+  dstc: 128
   nsteps: 8
   encoder_architecture: impala
   train_rollout: last
@@ -55,5 +55,5 @@ optim:
   grad_clip_pred: 2.0
   weight_decay: 1.e-5
 eval:
-  plan_cfg_path: examples/ac_video_jepa/cfgs/planning_mppi.yaml
-  eval_cfg_path: examples/ac_video_jepa/cfgs/eval_maze.yaml
+  plan_cfg_path: examples/ac_video_jepa/two_rooms/cfgs/planning_mppi.yaml
+  eval_cfg_path: examples/ac_video_jepa/maze/cfgs/eval_maze_bounded.yaml

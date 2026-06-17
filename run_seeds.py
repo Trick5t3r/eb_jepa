@@ -16,7 +16,7 @@ def run_seed(seed: int):
     from eb_jepa.training_utils import load_config
     from examples.ac_video_jepa.main import run
 
-    cfg = load_config("examples/ac_video_jepa/cfgs/train.yaml", {"meta.seed": seed})
+    cfg = load_config("examples/ac_video_jepa/two_rooms/cfgs/train.yaml", {"meta.seed": seed})
     run(cfg=cfg)
 
 
