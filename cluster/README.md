@@ -89,19 +89,38 @@ Shows GPU, CPU, and node counts per user on `defq`, sorted by GPU usage descendi
 
 ---
 
-## Architecture variables (for training jobs)
+## Two architectures, two venvs (important)
 
-`env.sh` exports:
+This cluster mixes **two CPU architectures**, and compiled wheels (torch, …) are
+**not portable across them** — so there are **two separate venvs**, one per arch:
+
+| where | arch | venv | role |
+|---|---|---|---|
+| **login node** (where you type & submit) | `x86_64` | `venvs/eb_jepa_x86_64` | runs the **launcher** (`launch_sbatch.py`) — builds the config and **submits** the SLURM jobs (imports `submitit` + `eb_jepa`, which pulls in `torch`) |
+| **compute nodes** (`dalianvl`, the GPUs) | `aarch64` | `venvs/eb_jepa_aarch64` | runs the **actual training/eval** (torch + CUDA `cu128`) |
+
+`env.sh` derives the venv from `$(uname -m)`, so the same `source env.sh` picks the
+right one on each node:
 ```bash
-EBJEPA_COMPUTE_ARCH=aarch64   # target arch for SLURM compute nodes
+UV_PROJECT_ENVIRONMENT=$WORK/venvs/eb_jepa_$ARCH   # ARCH = x86_64 (login) | aarch64 (compute)
 ```
 
-Override before sourcing to target a different arch:
+**`setup.sh` sets up BOTH** automatically:
+1. on the login node it runs `uv sync` → builds `eb_jepa_x86_64` (torch-cpu, submitit, …);
+2. then it submits a short SLURM job that runs `uv sync` on a compute node → builds
+   `eb_jepa_aarch64` with **torch+cu128**.
+
+> ⚠️ Wait for that second job (`eb_jepa_setup`) to finish before launching training —
+> until it does, the `aarch64` venv is incomplete and jobs will fail to import torch.
+> A login-only manual venv (skipping `setup.sh`) will also be incomplete: always set up
+> via `setup.sh`.
+
+`EBJEPA_COMPUTE_ARCH` (default `aarch64`) drives `COMPUTE_PYTHON` in `launch_sbatch.py`,
+i.e. the Python binary submitit uses on compute nodes. Override before sourcing to target
+a different arch:
 ```bash
 export EBJEPA_COMPUTE_ARCH=x86_64 && source env.sh
 ```
-
-This drives `COMPUTE_PYTHON` in `launch_sbatch.py`, which is the Python binary submitit will use on compute nodes.
 
 ---
 
@@ -114,6 +133,14 @@ export WANDB_DISABLED=true && source env.sh
 # Re-enable
 export WANDB_DISABLED=false && source env.sh
 ```
+
+> ⚠️ The training configs default to `logging.log_wandb: true`. A shell env var does
+> **not** propagate through submitit to the compute job, so without W&B credentials the
+> job crashes (`You must call wandb.init() before wandb.log()`). With the launcher,
+> disable it **via the config override** (lowercase `false` so it parses as a bool):
+> ```bash
+> python -m examples.launch_sbatch --example ac_video_jepa --single --logging.log_wandb false
+> ```
 
 Or per-run via config override:
 ```bash
