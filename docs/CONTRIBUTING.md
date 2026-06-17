@@ -29,10 +29,19 @@ Meta has a [bounty program](https://bugbounty.meta.com/) for the safe
 disclosure of security bugs. In those cases, please go through the process
 outlined on that page and do not file a public issue.
 
-## Coding Style  
-* 2 spaces for indentation rather than tabs
-* 80 character line length
-* ...
+## Coding Style
+Python, formatted with **black** (4-space indentation, black's default 88-char line
+length) and **isort** (`profile=black`); unused imports are removed with **autoflake**.
+These are enforced by CI (`.github/workflows/linters.yaml`), so run them before pushing:
+
+```bash
+# Remove unused imports
+autoflake --remove-all-unused-imports -r --in-place .
+# Sort imports
+python -m isort eb_jepa examples tests
+# Format code
+python -m black eb_jepa examples tests
+```
 
 ## License
 By contributing to eb_jepa, you agree that your contributions will be licensed

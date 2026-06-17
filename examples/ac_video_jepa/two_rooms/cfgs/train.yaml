@@ -51,8 +51,8 @@ optim:
   grad_clip_pred: 2.0
   weight_decay: 1.e-5
 eval:
-  plan_cfg_path: examples/ac_video_jepa/cfgs/planning_mppi.yaml # eb_jepa/planning_mppi.yaml
-  eval_cfg_path: examples/ac_video_jepa/cfgs/eval.yaml
+  plan_cfg_path: examples/ac_video_jepa/two_rooms/cfgs/planning_mppi.yaml # examples/ac_video_jepa/two_rooms/cfgs/planning_mppi.yaml
+  eval_cfg_path: examples/ac_video_jepa/two_rooms/cfgs/eval.yaml
 
 # --- Parameters used when running with --full-sweep
 # By default, only the parameters specified above are used
