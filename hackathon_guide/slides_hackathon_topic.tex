@@ -170,28 +170,35 @@
 \begin{frame}{Pipeline — one engine: swappable modules}
   \begin{center}\small\itshape One generic, config-driven JEPA engine in \texttt{eb\_jepa/}; each example just \emph{wires} swappable core modules.\end{center}
   \vspace{0.15cm}
+  % repo screenshots in place of the tikz — root / eb_jepa / examples (tune height as needed)
   \begin{center}
-    \resizebox{0.95\textwidth}{!}{%
-    \begin{tikzpicture}[
-      nd/.style={draw=primary, fill=primary!10, rounded corners=3pt, text width=2.1cm,
-                 minimum height=0.85cm, align=center, font=\scriptsize\bfseries, text=primary, inner sep=3pt},
-      ar/.style={->, thick, color=primary!60}]
-      \node[nd] (a) at (0,0)    {Encoder};
-      \node[nd] (b) at (2.7,0)  {Predictor};
-      \node[nd] (c) at (5.4,0)  {Objective\\\scriptsize $+$ regularizer};
-      \node[nd] (d) at (8.1,0)  {Planner};
-      \node[nd] (e) at (10.8,0) {Probe\\\scriptsize vs baselines};
-      \draw[ar](a)--(b); \draw[ar](b)--(c); \draw[ar](c)--(d); \draw[ar](d)--(e);
-      \node[font=\scriptsize, text=secondary!80!black] at (4.05,-0.95)
-        {assembled by \texttt{jepa.py} — \texttt{JEPA} / \texttt{JEPAProbe} / unified \texttt{unroll()}};
-    \end{tikzpicture}}
+    \includegraphics[height=3cm]{figures/screenshot_home}\hfill
+    \includegraphics[height=3cm]{figures/screenshot_utils}\hfill
+    \includegraphics[height=3cm]{figures/screenshot_example}
   \end{center}
-  \vspace{0.25cm}
-  \begin{center}\footnotesize
-    \textbf{Swap} the engine in \texttt{eb\_jepa/} (\texttt{jepa·architectures·losses·planning}) \;·\; \textbf{wire} it per example in \texttt{examples/<x>/} (\texttt{main·eval·config.yaml}) — all config-driven.
-  \end{center}
-  % >>> add a repo screenshot below (e.g. the eb\_jepa/ tree, or architectures.py) <<<
-  \vfill
+  \vspace{0.2cm}
+  \begin{columns}[T]
+    \begin{column}{0.5\textwidth}
+      \begin{qbox}{secondary}{orgrow}
+        \cardtitle{secondary}{Core engine — \texttt{eb\_jepa/} (swap these)}
+        \footnotesize
+        \qitem{\texttt{jepa.py} — \texttt{JEPA}/\texttt{JEPAProbe}, unified \texttt{unroll()}}
+        \qitem{\texttt{architectures.py} — encoders / predictors (ResNet, Impala, GRU)}
+        \qitem{\texttt{losses.py} — predictive JEPA \& anti-collapse (VICReg / VC / IDM)}
+        \qitem{\texttt{planning.py} — CEM \,/\, MPPI planners \& objectives}
+      \end{qbox}
+    \end{column}
+    \begin{column}{0.5\textwidth}
+      \begin{qbox}{primary}{orgrow}
+        \cardtitle{primary}{Around it — data \& assembly}
+        \footnotesize
+        \qitem{\texttt{datasets/<env>/} — loaders, dispatched by \texttt{env\_name}}
+        \qitem{\texttt{examples/<x>/} — thin scripts: \texttt{main.py} · \texttt{eval.py} · \texttt{config.yaml} · README}
+        \qitem{\texttt{launch\_sbatch.py} — one launcher (\texttt{--example}, submitit)}
+        \qitem{\texttt{tests/} lock the swappable-module contracts}
+      \end{qbox}
+    \end{column}
+  \end{columns}
 \end{frame}
 
 \begin{frame}{Pipeline — reuse, complete, explore}
