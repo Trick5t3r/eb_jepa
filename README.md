@@ -74,7 +74,7 @@ JEPA for world modeling + planning in Two Rooms environment.
 
 ### HTW cluster — quick start (hackathon only)
 
-> Skip this section unless you are on the HTW hackathon cluster — the generic install above is all you need locally.
+> Skip this section unless you are on the HTW hackathon cluster — the generic install below is all you need locally.
 
 Please follow the [setup instructions](setup.md) before starting the project.
 
@@ -153,7 +153,7 @@ checkpoints/
 
 | Command | Description |
 |---------|-------------|
-| `--example {name}` | Choose: `image_jepa`, `video_jepa`, `ac_video_jepa`, `maze`, `fintime`, `ltsf`, `eeg`, `audio`, `pointcloud`, `gray_scott` |
+| `--example {name}` | Choose: `image_jepa`, `video_jepa`, `ac_video_jepa`, `maze`, `fintime`, `ltsf`, `eeg`, `audio`, `pointcloud`, `gray_scott`, `intuitive_physics`, `factors_of_variation` |
 | `--fname {path}` | Run the sweep specified in the config at `{path}` |
 | `--single` | Launch single job (dev mode) |
 | `--sweep {name}` | Custom sweep name |
@@ -206,7 +206,7 @@ For detailed wandb sweep analysis (parallel coordinates, hyperparameter importan
 1. Use `--use-wandb-sweep` flag when launching
 2. Go to wandb web UI → left pane → **"Sweeps"** → click your sweep name
 
-**SLURM Configuration:** To customize SLURM parameters (partition, account, memory, etc.), edit the `SLURM_DEFAULTS` dictionary at the top of `examples/launch_sbatch.py`.
+**SLURM Configuration:** SLURM parameters default to the HTW cluster and are read from `EBJEPA_SLURM_*` env vars (set by `env.sh`, which also auto-detects your account/QOS per user). Override per launch with the CLI flags `--partition`/`--account`/`--cpus-per-task`/`--time-min`/`--gpus-per-node`, or export the matching `EBJEPA_SLURM_*` var. The `SLURM_DEFAULTS` dictionary at the top of `examples/launch_sbatch.py` holds the fallbacks.
 
 </details>
 
