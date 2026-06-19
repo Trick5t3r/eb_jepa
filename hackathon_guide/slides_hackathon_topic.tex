@@ -186,60 +186,25 @@
         {assembled by \texttt{jepa.py} — \texttt{JEPA} / \texttt{JEPAProbe} / unified \texttt{unroll()}};
     \end{tikzpicture}}
   \end{center}
-  \vspace{0.15cm}
-  \begin{columns}[T]
-    \begin{column}{0.5\textwidth}
-      \begin{qbox}{secondary}{orgrow}
-        \cardtitle{secondary}{Core engine — \texttt{eb\_jepa/} (swap these)}
-        \footnotesize
-        \qitem{\texttt{jepa.py} — \texttt{JEPA}/\texttt{JEPAProbe}, unified \texttt{unroll()}}
-        \qitem{\texttt{architectures.py} — encoders / predictors (ResNet, Impala, GRU)}
-        \qitem{\texttt{losses.py} — predictive JEPA \& anti-collapse (VICReg / VC / IDM)}
-        \qitem{\texttt{planning.py} — CEM \,/\, MPPI planners \& objectives}
-      \end{qbox}
-    \end{column}
-    \begin{column}{0.5\textwidth}
-      \begin{qbox}{primary}{orgrow}
-        \cardtitle{primary}{Around it — data \& assembly}
-        \footnotesize
-        \qitem{\texttt{datasets/<env>/} — loaders, dispatched by \texttt{env\_name}}
-        \qitem{\texttt{examples/<x>/} — thin scripts: \texttt{main.py} · \texttt{eval.py} · \texttt{config.yaml} · README}
-        \qitem{\texttt{launch\_sbatch.py} — one launcher (\texttt{--example}, submitit)}
-        \qitem{\texttt{tests/} lock the swappable-module contracts}
-      \end{qbox}
-    \end{column}
-  \end{columns}
-  \vspace{0.1cm}
-  \begin{center}\scriptsize\itshape Everything config-driven (\texttt{config.yaml} $+$ OmegaConf $+$ fire CLI) — change behaviour without touching the engine.\end{center}
+  \vspace{0.25cm}
+  \begin{center}\footnotesize
+    \textbf{Swap} the engine in \texttt{eb\_jepa/} (\texttt{jepa·architectures·losses·planning}) \;·\; \textbf{wire} it per example in \texttt{examples/<x>/} (\texttt{main·eval·config.yaml}) — all config-driven.
+  \end{center}
+  % >>> add a repo screenshot below (e.g. the eb\_jepa/ tree, or architectures.py) <<<
+  \vfill
 \end{frame}
 
-\begin{frame}{Pipeline — examples to reuse, tracks to complete, and above all: explore}
-  \begin{center}\small\itshape Reuse a complete example, complete a track baseline by filling a tiny \texttt{\#TODO} surface — then explore.\end{center}
-  \vspace{0.18cm}
-  \begin{columns}[T]
-    \begin{column}{0.5\textwidth}
-      \begin{qbox}{secondary}{exrow}
-        \cardtitle{secondary}{Reuse — complete examples}
-        \footnotesize
-        \qitem{\texttt{image\_jepa} — CIFAR-10 SSL, linear probe $\sim$91\%}
-        \qitem{\texttt{video\_jepa} — Moving-MNIST latent prediction}
-        \qitem{\texttt{ac\_video\_jepa/two\_rooms} — world model $+$ planning ($\sim$97\%)}
-        \qitem{\itshape explore: \textbf{the maze} — A\textsuperscript{*}-free hierarchical navigation}
-      \end{qbox}
-    \end{column}
-    \begin{column}{0.5\textwidth}
-      \begin{qbox}{primary}{exrow}
-        \cardtitle{primary}{Complete — 6 tracks (baseline $+$ \texttt{\#TODO})}
-        \footnotesize
-        \qitem{audio · EEG · point cloud · FinTime · LTSF · Gray-Scott}
-        \qitem{\textbf{provided \& runnable}: loader $+$ augment $+$ train loop $+$ probe harness}
-        \qitem{\textbf{you fill 3 \texttt{\#TODO} stubs}: \texttt{build\_encoder} · \texttt{build\_ssl}/\texttt{build\_jepa} · \texttt{probe}}
-        \qitem{data side is config-only: \texttt{task\_type}/\texttt{in\_channels}/\texttt{metric} preset in \texttt{data\_config.yaml}}
-      \end{qbox}
-    \end{column}
-  \end{columns}
-  \vspace{0.12cm}
-  \begin{center}\small\itshape ``Start from a baseline, then make it yours'': runnable harness $\rightarrow$ fill the stubs $\rightarrow$ your baseline $\rightarrow$ explore.\end{center}
+\begin{frame}{Pipeline — reuse, complete, explore}
+  \begin{center}\small\itshape Reuse a complete example · complete a track by filling a tiny \texttt{\#TODO} surface · then explore.\end{center}
+  \vspace{0.3cm}
+  {\footnotesize
+  \begin{itemize}\itemsep0.5em
+    \item \textbf{Reuse} — runnable examples: \texttt{image\_jepa} · \texttt{video\_jepa} · \texttt{ac\_video\_jepa/two\_rooms} \;(+ explore \texttt{maze}).
+    \item \textbf{Complete} — 6 tracks (audio · EEG · point cloud · FinTime · LTSF · Gray-Scott): harness provided, you fill \textbf{3 \texttt{\#TODO}} — \texttt{build\_encoder} · \texttt{build\_ssl}/\texttt{build\_jepa} · \texttt{probe}.
+    \item \textbf{Explore} — start from the baseline, then make it yours.
+  \end{itemize}}
+  % >>> add a repo screenshot below (e.g. the examples/ tree, or a track README #TODO) <<<
+  \vfill
 \end{frame}
 
 \begin{frame}{What We Expect From You}
